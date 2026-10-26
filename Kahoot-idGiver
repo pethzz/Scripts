@@ -1,294 +1,197 @@
 /*
- * Pethz Hub v4.0 - Mobile Safe Edition
- * Otimizado para evitar crashes e funcionar em navegadores mobile.
+ * Pethz Hub v5.0 - Lite (100% Livre de Crashs)
+ * Estratégia: Sem WebSocket, sem JSON.parse pesado. Apenas leitura leve do DOM.
  */
 
 (function() {
     'use strict';
 
-    // Evita que o script seja injetado duas vezes (o que causa loop e crash)
-    if (window.__pethzHubInjected) {
-        console.warn('[Pethz Hub] Já está rodando!');
+    // Evita dupla injeção
+    if (document.getElementById('pethz-hub')) {
+        console.warn('[Pethz Hub] Já está na tela.');
         return;
     }
-    window.__pethzHubInjected = true;
 
-    try {
-        // ============================================================
-        // 1. INJEÇÃO DE CSS (Otimizado para Mobile)
-        // ============================================================
-        const style = document.createElement('style');
-        style.textContent = `
-            #pethz-hub {
-                position: fixed; top: 10px; left: 10px; width: 260px;
-                background: rgba(15, 15, 25, 0.95); border: 2px solid #8a2be2;
-                border-radius: 12px; box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                color: #e0e0ff; z-index: 99999; user-select: none;
-                touch-action: none; /* Impede scroll ao arrastar */
-            }
-            #pethz-hub.minimized .pethz-body { display: none; }
-            .pethz-header {
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 10px 15px; background: linear-gradient(90deg, #1a1a2e, #16213e);
-                border-bottom: 1px solid #8a2be2; border-radius: 10px 10px 0 0; cursor: move;
-            }
-            .pethz-title { font-weight: bold; font-size: 16px; text-shadow: 0 0 8px #8a2be2; }
-            .pethz-controls button {
-                background: transparent; border: none; color: #e0e0ff;
-                font-size: 20px; cursor: pointer; margin-left: 10px; padding: 0 5px;
-            }
-            .pethz-body { padding: 12px; }
-            .pethz-toggle { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-            .pethz-toggle label { font-size: 13px; }
-            .pethz-switch { position: relative; display: inline-block; width: 44px; height: 22px; }
-            .pethz-switch input { opacity: 0; width: 0; height: 0; }
-            .pethz-slider {
-                position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-                background-color: #333; transition: .3s; border-radius: 22px;
-            }
-            .pethz-slider:before {
-                position: absolute; content: ""; height: 16px; width: 16px;
-                left: 3px; bottom: 3px; background-color: white;
-                transition: .3s; border-radius: 50%;
-            }
-            .pethz-switch input:checked + .pethz-slider { background-color: #8a2be2; }
-            .pethz-switch input:checked + .pethz-slider:before { transform: translateX(22px); }
-            .pethz-highlight {
-                box-shadow: 0 0 15px 4px #00ff88 !important;
-                border: 3px solid #00ff88 !important;
-            }
-            .pethz-status { font-size: 11px; margin-top: 8px; color: #ffaa00; text-align: center; font-weight: bold; }
-        `;
-        document.head.appendChild(style);
-
-        // ============================================================
-        // 2. CRIAÇÃO DO MENU
-        // ============================================================
-        const menu = document.createElement('div');
-        menu.id = 'pethz-hub';
-        menu.innerHTML = `
-            <div class="pethz-header" id="pethz-drag-handle">
-                <span class="pethz-title">Pethz Hub (Mobile)</span>
-                <div class="pethz-controls">
-                    <button id="pethz-minimize">—</button>
-                    <button id="pethz-close">✕</button>
-                </div>
-            </div>
-            <div class="pethz-body">
-                <div class="pethz-toggle">
-                    <label>Auto Answer</label>
-                    <label class="pethz-switch">
-                        <input type="checkbox" id="pethz-auto-answer">
-                        <span class="pethz-slider"></span>
-                    </label>
-                </div>
-                <div class="pethz-toggle">
-                    <label>Show Answers</label>
-                    <label class="pethz-switch">
-                        <input type="checkbox" id="pethz-show-answers">
-                        <span class="pethz-slider"></span>
-                    </label>
-                </div>
-                <div class="pethz-status" id="pethz-status">Iniciando...</div>
-            </div>
-        `;
-        document.body.appendChild(menu);
-
-        // ============================================================
-        // 3. CONTROLES DE ARRASTAR (Touch + Mouse)
-        // ============================================================
-        let isDragging = false, startX, startY, initialLeft, initialTop;
-        const dragHandle = document.getElementById('pethz-drag-handle');
-
-        const startDrag = (e) => {
-            if (e.target.closest('.pethz-controls')) return; // Não arrasta ao clicar em botões
-            isDragging = true;
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            startX = clientX;
-            startY = clientY;
-            initialLeft = menu.offsetLeft;
-            initialTop = menu.offsetTop;
-        };
-
-        const onDrag = (e) => {
-            if (!isDragging) return;
-            if (e.cancelable) e.preventDefault(); // Evita scroll no mobile
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            menu.style.left = (initialLeft + clientX - startX) + 'px';
-            menu.style.top = (initialTop + clientY - startY) + 'px';
-        };
-
-        const stopDrag = () => { isDragging = false; };
-
-        dragHandle.addEventListener('mousedown', startDrag);
-        dragHandle.addEventListener('touchstart', startDrag, { passive: false });
-        document.addEventListener('mousemove', onDrag);
-        document.addEventListener('touchmove', onDrag, { passive: false });
-        document.addEventListener('mouseup', stopDrag);
-        document.addEventListener('touchend', stopDrag);
-
-        document.getElementById('pethz-minimize').addEventListener('click', () => menu.classList.toggle('minimized'));
-        
-        // ============================================================
-        // 4. ESTADO
-        // ============================================================
-        let autoAnswerEnabled = false;
-        let showAnswersEnabled = false;
-        let currentCorrectAnswerIndex = null;
-        let lastQuestionTimestamp = 0;
-        let domObserver = null;
-
-        // Fecha o menu e limpa tudo de forma segura
-        document.getElementById('pethz-close').addEventListener('click', () => {
-            menu.remove();
-            if (domObserver) domObserver.disconnect();
-            window.__pethzHubInjected = false;
-        });
-
-        // ============================================================
-        // 5. BUSCA SEGURA (Evita Crash)
-        // ============================================================
-        // Em vez de varrer tudo sem limite, limitamos a profundidade a 6 níveis
-        function findCorrectAnswerSafe(obj, depth = 0) {
-            if (depth > 6 || typeof obj !== 'object' || obj === null) return null;
-            
-            if (obj.choices && Array.isArray(obj.choices)) {
-                for (let i = 0; i < obj.choices.length; i++) {
-                    if (obj.choices[i] && obj.choices[i].correct === true) return i;
-                }
-            }
-            
-            for (let key in obj) {
-                if (obj.hasOwnProperty(key)) {
-                    const result = findCorrectAnswerSafe(obj[key], depth + 1);
-                    if (result !== null) return result;
-                }
-            }
-            return null;
+    // ============================================================
+    // 1. CSS (Leve)
+    // ============================================================
+    const style = document.createElement('style');
+    style.textContent = `
+        #pethz-hub {
+            position: fixed; top: 10px; left: 10px; width: 250px;
+            background: rgba(15, 15, 25, 0.95); border: 2px solid #8a2be2;
+            border-radius: 12px; box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
+            font-family: sans-serif; color: #fff; z-index: 999999;
+            user-select: none; touch-action: none;
         }
-
-        // ============================================================
-        // 6. INTERCEPTAÇÃO DO WEBSOCKET
-        // ============================================================
-        const OriginalWebSocket = window.WebSocket;
-        if (!window.__pethzWSHooked) {
-            window.__pethzWSHooked = true;
-            window.WebSocket = function(...args) {
-                const ws = new OriginalWebSocket(...args);
-                ws.addEventListener('message', (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        const messages = Array.isArray(data) ? data : [data];
-                        messages.forEach(msg => {
-                            // Verifica o canal e o ID 1 (Início da pergunta)
-                            if (msg.channel === '/service/player' && msg.data && msg.data.id === 1) {
-                                let content;
-                                try {
-                                    content = JSON.parse(msg.data.content);
-                                } catch (e) {
-                                    content = msg.data.content; // Fallback
-                                }
-                                
-                                const correctIndex = findCorrectAnswerSafe(content);
-                                
-                                if (correctIndex !== null) {
-                                    handleNewQuestion(correctIndex, 'WebSocket');
-                                } else {
-                                    document.getElementById('pethz-status').innerText = 'Aguardando (DOM)...';
-                                }
-                            }
-                        });
-                    } catch (e) {
-                        // Ignora erros de parse silenciosamente
-                    }
-                });
-                return ws;
-            };
+        #pethz-hub.minimized .pethz-body { display: none; }
+        .pethz-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px; background: #1a1a2e;
+            border-bottom: 1px solid #8a2be2; border-radius: 10px 10px 0 0; cursor: move;
         }
+        .pethz-title { font-weight: bold; font-size: 15px; }
+        .pethz-controls button {
+            background: transparent; border: none; color: #fff;
+            font-size: 18px; cursor: pointer; margin-left: 8px;
+        }
+        .pethz-body { padding: 10px; }
+        .pethz-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .pethz-row label { font-size: 13px; }
+        .pethz-switch { position: relative; width: 40px; height: 20px; }
+        .pethz-switch input { opacity: 0; width: 0; height: 0; }
+        .pethz-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #555; transition: .3s; border-radius: 20px;
+        }
+        .pethz-slider:before {
+            position: absolute; content: ""; height: 14px; width: 14px;
+            left: 3px; bottom: 3px; background-color: white;
+            transition: .3s; border-radius: 50%;
+        }
+        .pethz-switch input:checked + .pethz-slider { background-color: #8a2be2; }
+        .pethz-switch input:checked + .pethz-slider:before { transform: translateX(20px); }
+        .pethz-highlight {
+            box-shadow: 0 0 15px 4px #00ff88 !important;
+            border: 3px solid #00ff88 !important;
+        }
+        .pethz-status { font-size: 11px; margin-top: 5px; color: #ffaa00; text-align: center; }
+    `;
+    document.head.appendChild(style);
 
-        // ============================================================
-        // 7. OBSERVADOR DE DOM (Para pegar eventos se o WS falhar)
-        // ============================================================
-        // Se a rede for instável ou o script for colado no meio da pergunta,
-        // ele tenta descobrir a resposta lendo atributos secretos do HTML.
-        domObserver = new MutationObserver(() => {
-            if (autoAnswerEnabled || showAnswersEnabled) {
+    // ============================================================
+    // 2. MENU HTML
+    // ============================================================
+    const menu = document.createElement('div');
+    menu.id = 'pethz-hub';
+    menu.innerHTML = `
+        <div class="pethz-header" id="pethz-drag-handle">
+            <span class="pethz-title">Pethz Hub v5 Lite</span>
+            <div class="pethz-controls">
+                <button id="pethz-minimize">—</button>
+                <button id="pethz-close">✕</button>
+            </div>
+        </div>
+        <div class="pethz-body">
+            <div class="pethz-row">
+                <label>Auto Answer</label>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-auto-answer">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
+            <div class="pethz-row">
+                <label>Show Answers</label>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-show-answers">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
+            <div class="pethz-status" id="pethz-status">Monitorando...</div>
+        </div>
+    `;
+    document.body.appendChild(menu);
+
+    // Arrastar
+    let isDragging = false, startX, startY, initialLeft, initialTop;
+    const dragHandle = document.getElementById('pethz-drag-handle');
+    const startDrag = (e) => {
+        if (e.target.closest('.pethz-controls')) return;
+        isDragging = true;
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        startX = cx; startY = cy;
+        initialLeft = menu.offsetLeft; initialTop = menu.offsetTop;
+    };
+    const onDrag = (e) => {
+        if (!isDragging) return;
+        if (e.cancelable) e.preventDefault();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        menu.style.left = (initialLeft + cx - startX) + 'px';
+        menu.style.top = (initialTop + cy - startY) + 'px';
+    };
+    const stopDrag = () => { isDragging = false; };
+
+    dragHandle.addEventListener('mousedown', startDrag);
+    dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchend', stopDrag);
+
+    document.getElementById('pethz-minimize').onclick = () => menu.classList.toggle('minimized');
+    document.getElementById('pethz-close').onclick = () => {
+        menu.remove();
+        if (window.pethzInterval) clearInterval(window.pethzInterval);
+    };
+
+    // ============================================================
+    // 3. LÓGICA PRINCIPAL (Polling Leve - Sem WebSocket)
+    // ============================================================
+    let autoAnswerEnabled = false;
+    let showAnswersEnabled = false;
+    let lastQuestionText = "";
+    let currentCorrectIndex = null;
+
+    document.getElementById('pethz-auto-answer').onchange = (e) => autoAnswerEnabled = e.target.checked;
+    document.getElementById('pethz-show-answers').onchange = (e) => showAnswersEnabled = e.target.checked;
+
+    // Função que roda a cada 300ms (super leve, não trava)
+    window.pethzInterval = setInterval(() => {
+        try {
+            // 1. Procura o texto da pergunta na tela para saber se mudou
+            const questionEl = document.querySelector('[data-functional-selector="question-title"], .question-title__Title-sc-12qj0yr-1');
+            if (!questionEl) return; // Se não tem pergunta na tela, ignora
+
+            const questionText = questionEl.innerText.trim();
+            
+            // Se a pergunta mudou, reseta o estado
+            if (questionText !== lastQuestionText && questionText !== "") {
+                lastQuestionText = questionText;
+                currentCorrectIndex = null;
+                document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+                
+                // Tenta achar a resposta lendo os "segredos" do HTML
                 const buttons = document.querySelectorAll('[data-functional-selector^="answer-"]');
-                if (buttons.length > 0 && currentCorrectAnswerIndex === null) {
-                    // Se o DOM demorar a carregar, tenta achar a classe "correct"
+                
+                if (buttons.length > 0) {
+                    document.getElementById('pethz-status').innerText = "Analisando...";
+                    
+                    // O Kahoot às vezes deixa pistas no HTML (classes, atributos)
                     for (let i = 0; i < buttons.length; i++) {
-                        if (buttons[i].classList.contains('correct')) {
-                            handleNewQuestion(i, 'DOM Fallback');
+                        const btn = buttons[i];
+                        // Procura por classes ou atributos que indiquem a resposta certa
+                        if (
+                            btn.getAttribute('data-correct') === 'true' ||
+                            btn.classList.contains('correct') ||
+                            btn.innerHTML.includes('correct') ||
+                            btn.getAttribute('aria-label') === 'Correct'
+                        ) {
+                            currentCorrectIndex = i;
                             break;
                         }
                     }
-                }
-            }
-        });
-        domObserver.observe(document.body, { childList: true, subtree: true });
 
-        // ============================================================
-        // 8. EXECUÇÃO DAS AÇÕES
-        // ============================================================
-        function handleNewQuestion(correctIndex, source) {
-            // Impede que o script faça a mesma ação 2 vezes seguidas na mesma pergunta
-            const now = Date.now();
-            if (now - lastQuestionTimestamp < 1000) return;
-            lastQuestionTimestamp = now;
-
-            currentCorrectAnswerIndex = correctIndex;
-            document.getElementById('pethz-status').innerText = `Resposta: Alternativa ${correctIndex + 1} (${source})`;
-
-            document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
-
-            // Aumentei o delay para mobile, pois o celular demora a renderizar
-            setTimeout(() => {
-                try {
-                    const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
-                    const answerElement = document.querySelector(answerSelector);
-
-                    if (answerElement) {
-                        if (showAnswersEnabled) {
-                            answerElement.classList.add('pethz-highlight');
+                    // Se achou a resposta e as opções estão ativadas
+                    if (currentCorrectIndex !== null) {
+                        document.getElementById('pethz-status').innerText = `Resposta: Alternativa ${currentCorrectIndex + 1}`;
+                        const correctBtn = document.querySelector(`[data-functional-selector="answer-${currentCorrectIndex}"]`);
+                        
+                        if (correctBtn) {
+                            if (showAnswersEnabled) correctBtn.classList.add('pethz-highlight');
+                            if (autoAnswerEnabled) correctBtn.click();
                         }
-                        if (autoAnswerEnabled) {
-                            answerElement.click();
-                        }
+                    } else {
+                        document.getElementById('pethz-status').innerText = "Sem dica no HTML";
                     }
-                } catch (err) {
-                    console.warn('[Pethz Hub] Erro ao executar ação:', err);
                 }
-            }, 250); // 250ms de delay para mobile
+            }
+        } catch (err) {
+            // Se der qualquer erro, ignora e continua rodando sem travar
+            console.warn("[Pethz] Ignorando erro interno:", err);
         }
+    }, 300); // 300ms é um intervalo seguro para não sobrecarregar a CPU
 
-        // ============================================================
-        // 9. TOGGLES
-        // ============================================================
-        document.getElementById('pethz-auto-answer').addEventListener('change', (e) => {
-            autoAnswerEnabled = e.target.checked;
-            if (autoAnswerEnabled && currentCorrectAnswerIndex !== null) {
-                const el = document.querySelector(`[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`);
-                if (el) el.click();
-            }
-        });
-
-        document.getElementById('pethz-show-answers').addEventListener('change', (e) => {
-            showAnswersEnabled = e.target.checked;
-            document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
-            if (showAnswersEnabled && currentCorrectAnswerIndex !== null) {
-                const el = document.querySelector(`[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`);
-                if (el) el.classList.add('pethz-highlight');
-            }
-        });
-
-        document.getElementById('pethz-status').innerText = 'Conectado!';
-
-    } catch (globalError) {
-        // Captura QUALQUER erro inesperado para não travar a página
-        console.error('[Pethz Hub] Erro crítico contido:', globalError);
-        alert('O Pethz Hub encontrou um erro, mas não travou a página. Verifique o console.');
-    }
+    console.log('%c[Pethz Hub v5] Modo Lite ativado. Sem WebSocket, sem crashes.', 'color: #00ff88; font-weight: bold;');
 })();
