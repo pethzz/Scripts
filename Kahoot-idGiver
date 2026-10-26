@@ -1,62 +1,103 @@
 /*
- * Pethz Hub v7.0 - WebSocket Direto (Anti-Crash Total)
- * Encontra a resposta em "correctAnswers" sem varrer o JSON inteiro.
+ * Pethz Neon - Interface KaHack + Motor Anti-Crash
+ * Não precisa de ID do quiz. Funciona via WebSocket leve.
  */
 
 (function() {
     'use strict';
 
-    if (document.getElementById('pethz-hub')) return;
+    if (window.__pethzNeonActive) return;
+    window.__pethzNeonActive = true;
 
     // ============================================================
-    // 1. CSS e MENU
+    // 1. CSS (Estilo KaHack Neon)
     // ============================================================
     const style = document.createElement('style');
     style.textContent = `
-        #pethz-hub {
-            position: fixed; top: 10px; left: 10px; width: 220px;
-            background: rgba(15, 15, 25, 0.95); border: 2px solid #8a2be2;
-            border-radius: 12px; box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
-            font-family: sans-serif; color: #fff; z-index: 999999; user-select: none;
+        #pethz-neon {
+            position: fixed; top: 10px; left: 10px; width: 260px;
+            background: #11111a; border: 2px solid #8a2be2;
+            border-radius: 10px; box-shadow: 0 0 15px rgba(138, 43, 226, 0.8);
+            font-family: sans-serif; color: #fff; z-index: 999999;
+            user-select: none; transition: all 0.2s;
         }
+        #pethz-neon.minimized .pethz-body { display: none; }
         .pethz-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 10px; background: #1a1a2e; border-bottom: 1px solid #8a2be2;
-            border-radius: 10px 10px 0 0; cursor: move;
+            padding: 10px 12px; background: #181826; border-bottom: 1px solid #8a2be2;
+            border-radius: 8px 8px 0 0; cursor: move;
         }
-        .pethz-title { font-weight: bold; font-size: 14px; }
-        .pethz-controls button { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; margin-left: 8px; }
-        .pethz-body { padding: 12px; text-align: center; }
-        .pethz-btn-on {
-            background: #333; color: white; border: 1px solid #8a2be2; padding: 8px 15px;
-            border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%;
-            transition: 0.3s;
-        }
-        .pethz-btn-on.active { background: #00ff88; color: black; box-shadow: 0 0 10px #00ff88; border-color: #00ff88; }
-        .pethz-status { font-size: 11px; margin-top: 8px; color: #ffaa00; }
+        .pethz-title { font-weight: bold; font-size: 14px; color: #d8b4fe; }
+        .pethz-controls button { background: none; border: none; color: #d8b4fe; font-size: 16px; cursor: pointer; margin-left: 8px; }
+        .pethz-body { padding: 12px; }
         
+        .pethz-toggle-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; background: #1a1a24; padding: 8px 10px; border-radius: 6px;
+            border: 1px solid #333;
+        }
+        .pethz-toggle-row span { font-size: 12px; font-weight: 500; }
+        
+        /* Switch Style */
+        .pethz-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .pethz-switch input { opacity: 0; width: 0; height: 0; }
+        .pethz-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #444; transition: .3s; border-radius: 20px;
+        }
+        .pethz-slider:before {
+            position: absolute; content: ""; height: 14px; width: 14px;
+            left: 3px; bottom: 3px; background-color: white;
+            transition: .3s; border-radius: 50%;
+        }
+        .pethz-switch input:checked + .pethz-slider { background-color: #8a2be2; box-shadow: 0 0 8px #8a2be2; }
+        .pethz-switch input:checked + .pethz-slider:before { transform: translateX(16px); }
+
+        .pethz-status { font-size: 11px; text-align: center; color: #888; margin-top: 5px; }
+
+        /* Efeitos na tela do jogo */
         .pethz-highlight {
             box-shadow: 0 0 20px 5px #00ff88 !important;
             border: 3px solid #00ff88 !important;
+            transform: scale(1.02);
             z-index: 9999;
         }
         .pethz-hidden {
-            opacity: 0.2 !important;
-            filter: blur(3px) grayscale(100%) !important;
+            opacity: 0.15 !important;
+            filter: blur(4px) grayscale(100%) !important;
             pointer-events: none !important;
         }
     `;
     document.head.appendChild(style);
 
+    // ============================================================
+    // 2. Criação do Menu
+    // ============================================================
     const menu = document.createElement('div');
-    menu.id = 'pethz-hub';
+    menu.id = 'pethz-neon';
     menu.innerHTML = `
         <div class="pethz-header" id="pethz-drag">
-            <span class="pethz-title">Pethz WS v7</span>
-            <div class="pethz-controls"><button id="pethz-close">✕</button></div>
+            <span class="pethz-title">KaHack! Neon</span>
+            <div class="pethz-controls">
+                <button id="pethz-min">—</button>
+                <button id="pethz-close">✕</button>
+            </div>
         </div>
         <div class="pethz-body">
-            <button id="pethz-toggle" class="pethz-btn-on">Ativar Show Answers</button>
+            <div class="pethz-toggle-row">
+                <span>Auto Answer</span>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-auto">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
+            <div class="pethz-toggle-row">
+                <span>Show Answers</span>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-show">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
             <div class="pethz-status" id="pethz-status">Aguardando...</div>
         </div>
     `;
@@ -71,107 +112,97 @@
     document.addEventListener('touchmove', (e) => { if(isDragging) { menu.style.left = (initL + e.touches[0].clientX - startX) + 'px'; menu.style.top = (initT + e.touches[0].clientY - startY) + 'px'; }});
     document.addEventListener('mouseup', () => isDragging = false);
     document.addEventListener('touchend', () => isDragging = false);
-    document.getElementById('pethz-close').onclick = () => menu.remove();
+
+    document.getElementById('pethz-min').onclick = () => menu.classList.toggle('minimized');
+    document.getElementById('pethz-close').onclick = () => { menu.remove(); window.__pethzNeonActive = false; };
 
     // ============================================================
-    // 2. LÓGICA WEBSOCKET (Leve e Direta)
+    // 3. Configurações
     // ============================================================
-    let isActive = false;
-    const btnToggle = document.getElementById('pethz-toggle');
-    const statusText = document.getElementById('pethz-status');
+    let autoAnswer = false;
+    let showAnswers = false;
 
-    btnToggle.onclick = () => {
-        isActive = !isActive;
-        btnToggle.classList.toggle('active', isActive);
-        btnToggle.innerText = isActive ? "Show Answers ON" : "Ativar Show Answers";
-        statusText.innerText = isActive ? "Interceptando..." : "Desligado";
-        
-        if(!isActive) {
-            document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
-            document.querySelectorAll('.pethz-hidden').forEach(el => el.classList.remove('pethz-hidden'));
-        }
-    };
+    document.getElementById('pethz-auto').onchange = (e) => autoAnswer = e.target.checked;
+    document.getElementById('pethz-show').onchange = (e) => showAnswers = e.target.checked;
 
-    // Substitui o WebSocket de forma segura
-    const OriginalWS = window.WebSocket;
-    if (!window.__pethzHookedV7) {
-        window.__pethzHookedV7 = true;
-        window.WebSocket = function(...args) {
-            const ws = new OriginalWS(...args);
-            
-            ws.addEventListener('message', function(event) {
-                if (!isActive) return; // Se estiver desligado no menu, nem processa
-                
-                try {
-                    // Filtro rápido: Só processa se for mensagem de jogador
-                    if (!event.data || event.data.indexOf('/service/player') === -1) return;
-                    
-                    const data = JSON.parse(event.data);
-                    const messages = Array.isArray(data) ? data : [data];
-                    
-                    for (const msg of messages) {
-                        if (msg.channel === '/service/player' && msg.data && msg.data.id === 1) {
-                            // AQUI ESTÁ O SEGREDO: A resposta não está em "choices", está em "correctAnswers" ou "correctChoices"
-                            // Não precisamos varrer o JSON inteiro, só olhar essas chaves específicas
-                            
-                            let content;
-                            try { content = JSON.parse(msg.data.content); } catch(e) { content = msg.data.content; }
-                            
-                            // Tenta achar as propriedades exatas que o Kahoot usa
-                            const correctArray = content.correctAnswers || content.correctChoices || content.correctAnswer;
-                            
-                            if (correctArray) {
-                                // Pega o índice da resposta (geralmente é 0, 1, 2 ou 3)
-                                let correctIndex = -1;
-                                if (Array.isArray(correctArray)) {
-                                    // Se for um array de booleanos [false, true, false, false]
-                                    correctIndex = correctArray.indexOf(true);
-                                } else if (typeof correctArray === 'number') {
-                                    // Se já for o número do índice
-                                    correctIndex = correctArray;
-                                }
-
-                                if (correctIndex !== -1 && correctIndex !== undefined) {
-                                    applyHighlight(correctIndex);
-                                }
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Ignora erros de JSON inválido
-                }
-            });
-            return ws;
-        };
+    function setStatus(text) {
+        document.getElementById('pethz-status').innerText = text;
     }
 
     // ============================================================
-    // 3. APLICA O EFEITO NA TELA
+    // 4. Interceptação do WebSocket (Motor Anti-Crash)
     // ============================================================
-    function applyHighlight(index) {
-        statusText.innerText = `Resposta: Alternativa ${index + 1} ✅`;
+    // O grande erro do GitHub era varrer o JSON inteiro. Aqui nós vamos DIRETO na propriedade certa.
+    const OriginalWS = window.WebSocket;
+    window.WebSocket = function(...args) {
+        const ws = new OriginalWS(...args);
         
-        // Limpa efeitos antigos
+        ws.addEventListener('message', function(event) {
+            // Se as opções estiverem desligadas, nem processa (economiza CPU)
+            if (!autoAnswer && !showAnswers) return;
+            if (!event.data || event.data.indexOf('/service/player') === -1) return;
+            
+            try {
+                const data = JSON.parse(event.data);
+                const messages = Array.isArray(data) ? data : [data];
+                
+                for (const msg of messages) {
+                    if (msg.channel === '/service/player' && msg.data && msg.data.id === 1) {
+                        let content;
+                        try { content = JSON.parse(msg.data.content); } catch(e) { content = msg.data.content; }
+                        
+                        // O Kahoot esconde a resposta na chave "correctAnswers". Não precisamos procurar no resto!
+                        let correctArray = content.correctAnswers || content.correctChoices || content.correctAnswer;
+                        
+                        if (correctArray) {
+                            let correctIndex = -1;
+                            if (Array.isArray(correctArray)) {
+                                correctIndex = correctArray.indexOf(true);
+                            } else if (typeof correctArray === 'number') {
+                                correctIndex = correctArray;
+                            }
+
+                            if (correctIndex !== -1) {
+                                executeAction(correctIndex);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silencia erros para não travar a página
+            }
+        });
+        return ws;
+    };
+
+    // ============================================================
+    // 5. Execução na Tela
+    // ============================================================
+    function executeAction(index) {
+        setStatus(`Resposta: Alternativa ${index + 1}`);
+        
+        // Limpa efeitos anteriores
         document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
         document.querySelectorAll('.pethz-hidden').forEach(el => el.classList.remove('pethz-hidden'));
 
-        // Como o WebSocket chega antes da tela carregar, esperamos 300ms para aplicar
+        // Delay essencial para o celular renderizar os botões antes de aplicar o efeito
         setTimeout(() => {
             const buttons = document.querySelectorAll('[data-functional-selector^="answer-"]');
             
             if (buttons.length > 0) {
                 buttons.forEach((btn, i) => {
                     if (i === index) {
-                        btn.classList.add('pethz-highlight'); // Brilha em verde
-                    } else {
-                        btn.classList.add('pethz-hidden'); // Esconde a errada
+                        if (showAnswers) btn.classList.add('pethz-highlight'); // Deixa verde
+                        if (autoAnswer) btn.click(); // Clica
+                    } else if (showAnswers) {
+                        btn.classList.add('pethz-hidden'); // Apaga as erradas
                     }
                 });
             } else {
-                statusText.innerText = "Tela demorou a carregar.";
+                setStatus("Tela demorou a carregar.");
             }
-        }, 300);
+        }, 250); // 250ms é o tempo de segurança para o mobile
     }
 
-    console.log('%c[Pethz WS v7] Injetado! Leve, rápido e à prova de crashes.', 'color: #00ff88; font-weight: bold;');
+    console.log('%c[KaHack Neon] Injetado com sucesso! Sem ID de URL.', 'color: #d8b4fe; font-weight: bold;');
 })();
