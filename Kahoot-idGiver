@@ -1,0 +1,220 @@
+(function () {
+  'use strict';
+
+  /* ========== CONFIGURAÇÃO ========== */
+  const CONTAINER_ID = 'kq-id-menu-container';
+  const STYLE_ID     = 'kq-id-menu-style';
+
+  /* ========== LIMPEZA DE INSTÂNCIA ANTERIOR ========== */
+  document.getElementById(CONTAINER_ID)?.remove();
+  document.getElementById(STYLE_ID)?.remove();
+
+  /* ========== EXTRAÇÃO DO ID ========== */
+  function extractQuizId() {
+    const url = window.location.href;
+
+    // 1) UUID (padrão mais comum no Kahoot!)
+    const uuid = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuid) return uuid[0];
+
+    // 2) Padrões específicos da URL
+    const patterns = [
+      /\/challenge\/([a-zA-Z0-9_-]+)/,
+      /\/details\/([a-zA-Z0-9_-]+)/,
+      /\/share\/[^\/]+\/([a-zA-Z0-9_-]+)/,
+      /[?&]quizId=([a-zA-Z0-9_-]+)/,
+      /[?&]id=([a-zA-Z0-9_-]+)/
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  const quizId = extractQuizId();
+
+  /* ========== CRIAÇÃO DO CONTAINER ========== */
+  const container = document.createElement('div');
+  container.id = CONTAINER_ID;
+
+  container.innerHTML = `
+    <div class="kq-menu" role="dialog" aria-label="Informações do Quiz Kahoot">
+      <div class="kq-header">
+        <span class="kq-dot"></span>
+        <span class="kq-title">Kahoot ID</span>
+        <button class="kq-close" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="kq-body">
+        <div class="kq-label">ID do Quiz</div>
+        <div class="kq-id ${quizId ? '' : 'kq-id-empty'}" title="${quizId || 'ID não encontrado na URL'}">
+          ${quizId || 'ID não encontrado'}
+        </div>
+        <button class="kq-copy" ${quizId ? '' : 'disabled'}>
+          <span class="kq-copy-text">Copiar ID</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  /* ========== ESTILOS ========== */
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    #${CONTAINER_ID} {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 2147483647;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #${CONTAINER_ID} .kq-menu {
+      width: 270px;
+      background: #181825;
+      color: #e6e6f0;
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55),
+                  0 0 0 1px rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+      animation: kqSlideIn 0.25s ease-out;
+    }
+    @keyframes kqSlideIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)     scale(1); }
+    }
+    #${CONTAINER_ID} .kq-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      background: #1f1f30;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    #${CONTAINER_ID} .kq-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #7c5cff;
+      box-shadow: 0 0 10px #7c5cff;
+    }
+    #${CONTAINER_ID} .kq-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      color: #c9c9dd;
+      text-transform: uppercase;
+      flex: 1;
+    }
+    #${CONTAINER_ID} .kq-close {
+      background: transparent;
+      border: none;
+      color: #8b8ba7;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+    #${CONTAINER_ID} .kq-close:hover {
+      background: rgba(255, 80, 80, 0.15);
+      color: #ff5c5c;
+    }
+    #${CONTAINER_ID} .kq-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #${CONTAINER_ID} .kq-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #7a7a95;
+    }
+    #${CONTAINER_ID} .kq-id {
+      background: #101019;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      color: #8ff0c3;
+      word-break: break-all;
+      text-align: center;
+      user-select: all;
+      line-height: 1.4;
+    }
+    #${CONTAINER_ID} .kq-id-empty { color: #ff8080; }
+    #${CONTAINER_ID} .kq-copy {
+      background: linear-gradient(135deg, #7c5cff 0%, #5b3dd6 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-family: inherit;
+    }
+    #${CONTAINER_ID} .kq-copy:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(124, 92, 255, 0.4);
+    }
+    #${CONTAINER_ID} .kq-copy:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    #${CONTAINER_ID} .kq-copy:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #${CONTAINER_ID} .kq-copy.kq-success {
+      background: linear-gradient(135deg, #23c483 0%, #12a06a 100%);
+    }
+  `;
+
+  document.head.appendChild(style);
+  document.body.appendChild(container);
+
+  /* ========== FUNÇÕES DE AÇÃO ========== */
+  const closeBtn = container.querySelector('.kq-close');
+  const copyBtn  = container.querySelector('.kq-copy');
+  const copyText = container.querySelector('.kq-copy-text');
+
+  // Fechar → remove tudo
+  closeBtn.addEventListener('click', () => {
+    container.remove();
+    style.remove();
+  });
+
+  // Copiar
+  copyBtn.addEventListener('click', async () => {
+    if (!quizId) return;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(quizId);
+      ok = true;
+    } catch (_) {
+      // Fallback antigo
+      const ta = document.createElement('textarea');
+      ta.value = quizId;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { ok = document.execCommand('copy'); } catch (_) {}
+      ta.remove();
+    }
+
+    if (ok) {
+      copyText.textContent = '✓ Copiado!';
+      copyBtn.classList.add('kq-success');
+      setTimeout(() => {
+        copyText.textContent = 'Copiar ID';
+        copyBtn.classList.remove('kq-success');
+      }, 1500);
+    }
+  });
+})();
