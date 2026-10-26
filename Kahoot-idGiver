@@ -1,109 +1,67 @@
 /*
- * Pethz Hub - Menu flutuante para Kahoot
- * Funcionalidades: Auto Answer e Show Answers
- * Design: Neon escuro, arrastável, minimizável
- * Uso: Cole este código no console do navegador (F12 > Console) antes de entrar na partida.
+ * Pethz Hub v3.5 - Suporte para entrar no meio da partida
  */
 
 (function() {
     'use strict';
 
     // ============================================================
-    // 1. INJEÇÃO DE CSS (TEMA NEON ESCURO)
+    // 1. INJEÇÃO DE CSS
     // ============================================================
     const style = document.createElement('style');
     style.textContent = `
         #pethz-hub {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            width: 300px;
-            background: rgba(15, 15, 25, 0.95);
-            border: 2px solid #8a2be2;
-            border-radius: 12px;
-            box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
+            position: fixed; top: 20px; left: 20px; width: 300px;
+            background: rgba(15, 15, 25, 0.95); border: 2px solid #8a2be2;
+            border-radius: 12px; box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #e0e0ff;
-            z-index: 99999;
-            user-select: none;
-            transition: all 0.3s ease;
+            color: #e0e0ff; z-index: 99999; user-select: none; transition: all 0.3s ease;
         }
         #pethz-hub.minimized .pethz-body { display: none; }
         .pethz-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            background: linear-gradient(90deg, #1a1a2e, #16213e);
-            border-bottom: 1px solid #8a2be2;
-            border-radius: 10px 10px 0 0;
-            cursor: move;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; background: linear-gradient(90deg, #1a1a2e, #16213e);
+            border-bottom: 1px solid #8a2be2; border-radius: 10px 10px 0 0; cursor: move;
         }
-        .pethz-title {
-            font-weight: bold;
-            font-size: 18px;
-            text-shadow: 0 0 8px #8a2be2;
-        }
+        .pethz-title { font-weight: bold; font-size: 18px; text-shadow: 0 0 8px #8a2be2; }
         .pethz-controls button {
-            background: transparent;
-            border: none;
-            color: #e0e0ff;
-            font-size: 18px;
-            cursor: pointer;
-            margin-left: 10px;
-            transition: color 0.2s;
+            background: transparent; border: none; color: #e0e0ff;
+            font-size: 18px; cursor: pointer; margin-left: 10px;
         }
         .pethz-controls button:hover { color: #8a2be2; }
         .pethz-body { padding: 15px; }
-        .pethz-toggle {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
+        .pethz-toggle { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .pethz-toggle label { font-size: 14px; }
-        .pethz-switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
+        .pethz-switch { position: relative; display: inline-block; width: 50px; height: 24px; }
         .pethz-switch input { opacity: 0; width: 0; height: 0; }
         .pethz-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #333;
-            transition: .4s;
-            border-radius: 24px;
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333; transition: .4s; border-radius: 24px;
         }
         .pethz-slider:before {
-            position: absolute;
-            content: "";
-            height: 18px; width: 18px;
-            left: 3px; bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
+            position: absolute; content: ""; height: 18px; width: 18px;
+            left: 3px; bottom: 3px; background-color: white;
+            transition: .4s; border-radius: 50%;
         }
         .pethz-switch input:checked + .pethz-slider { background-color: #8a2be2; }
         .pethz-switch input:checked + .pethz-slider:before { transform: translateX(26px); }
         .pethz-highlight {
-            box-shadow: 0 0 20px 5px #8a2be2 !important;
-            border: 2px solid #8a2be2 !important;
-            transition: box-shadow 0.3s ease-in-out;
+            box-shadow: 0 0 20px 5px #00ff88 !important;
+            border: 3px solid #00ff88 !important;
+            transition: box-shadow 0.3s ease-in-out, border 0.3s ease-in-out;
         }
+        .pethz-status { font-size: 12px; margin-top: 10px; color: #ffaa00; text-align: center; font-weight: bold; }
     `;
     document.head.appendChild(style);
 
     // ============================================================
-    // 2. CRIAÇÃO DO MENU FLUTUANTE
+    // 2. CRIAÇÃO DO MENU
     // ============================================================
     const menu = document.createElement('div');
     menu.id = 'pethz-hub';
     menu.innerHTML = `
         <div class="pethz-header" id="pethz-drag-handle">
-            <span class="pethz-title">Pethz Hub</span>
+            <span class="pethz-title">Pethz Hub v3.5</span>
             <div class="pethz-controls">
                 <button id="pethz-minimize">—</button>
                 <button id="pethz-close">✕</button>
@@ -124,179 +82,185 @@
                     <span class="pethz-slider"></span>
                 </label>
             </div>
+            <div class="pethz-status" id="pethz-status">Aguardando pergunta...</div>
         </div>
     `;
     document.body.appendChild(menu);
 
     // ============================================================
-    // 3. FUNCIONALIDADES DO MENU: ARRASTAR, MINIMIZAR, FECHAR
+    // 3. FUNÇÕES DO MENU (Arrastar, Minimizar, Fechar)
     // ============================================================
-    const dragHandle = document.getElementById('pethz-drag-handle');
     let isDragging = false, offsetX, offsetY;
+    const dragHandle = document.getElementById('pethz-drag-handle');
 
     dragHandle.addEventListener('mousedown', (e) => {
         isDragging = true;
         offsetX = e.clientX - menu.getBoundingClientRect().left;
         offsetY = e.clientY - menu.getBoundingClientRect().top;
     });
-
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         menu.style.left = (e.clientX - offsetX) + 'px';
         menu.style.top = (e.clientY - offsetY) + 'px';
     });
-
     document.addEventListener('mouseup', () => { isDragging = false; });
 
-    document.getElementById('pethz-minimize').addEventListener('click', () => {
-        menu.classList.toggle('minimized');
-    });
-
+    document.getElementById('pethz-minimize').addEventListener('click', () => menu.classList.toggle('minimized'));
     document.getElementById('pethz-close').addEventListener('click', () => {
         menu.remove();
-        // Restaura o WebSocket original (opcional)
-        if (window.WebSocket !== OriginalWebSocket) {
-            window.WebSocket = OriginalWebSocket;
-        }
+        observer.disconnect();
     });
 
     // ============================================================
-    // 4. VARIÁVEIS DE ESTADO E DADOS DO QUIZ
+    // 4. ESTADO
     // ============================================================
     let autoAnswerEnabled = false;
     let showAnswersEnabled = false;
     let currentCorrectAnswerIndex = null;
-    let quizData = null; // Armazenará os dados do quiz (perguntas e respostas)
+    let hasAnsweredCurrentQuestion = false; // Evita clicar duas vezes na mesma pergunta
 
-    // Tenta extrair o ID do quiz da URL (ex: ?quizId=xxxx)
-    const urlParams = new URLSearchParams(window.location.search);
-    const quizId = urlParams.get('quizId');
-
-    // Busca os dados do quiz na API pública do Kahoot (usado para saber a resposta correta)
-    async function fetchQuizData(id) {
-        if (!id) return;
-        try {
-            const response = await fetch(`https://create.kahoot.it/rest/kahoots/${id}/card/?includeKahoot=true`);
-            if (!response.ok) throw new Error('Falha na resposta da API');
-            const data = await response.json();
-            // A estrutura pode variar; geralmente os dados estão em data.kahoot ou data.quiz
-            quizData = data.kahoot || data.quiz || data;
-            console.log('[Pethz Hub] Dados do quiz carregados com sucesso.');
-        } catch (err) {
-            console.warn('[Pethz Hub] Não foi possível obter os dados do quiz:', err.message);
+    // ============================================================
+    // 5. MÉTODO A: INTERCEPTAÇÃO DO WEBSOCKET (Para novas perguntas)
+    // ============================================================
+    function findCorrectAnswer(obj) {
+        if (typeof obj !== 'object' || obj === null) return null;
+        if (obj.choices && Array.isArray(obj.choices)) {
+            for (let i = 0; i < obj.choices.length; i++) {
+                if (obj.choices[i].correct === true) return i;
+            }
         }
+        for (let key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const result = findCorrectAnswer(obj[key]);
+                if (result !== null) return result;
+            }
+        }
+        return null;
     }
 
-    if (quizId) {
-        fetchQuizData(quizId);
-    } else {
-        console.warn('[Pethz Hub] ID do quiz não encontrado na URL. O Auto Answer pode não funcionar.');
-    }
-
-    // ============================================================
-    // 5. INTERCEPTAÇÃO DO WEBSOCKET (OBTENÇÃO DA RESPOSTA CORRETA)
-    // ============================================================
     const OriginalWebSocket = window.WebSocket;
     if (!window.__pethzWSHooked) {
         window.__pethzWSHooked = true;
-
         window.WebSocket = function(...args) {
             const ws = new OriginalWebSocket(...args);
-
             ws.addEventListener('message', (event) => {
                 try {
-                    const rawData = JSON.parse(event.data);
-                    // As mensagens do Kahoot geralmente vêm como um array
-                    const messages = Array.isArray(rawData) ? rawData : [rawData];
-
+                    const data = JSON.parse(event.data);
+                    const messages = Array.isArray(data) ? data : [data];
                     messages.forEach(msg => {
-                        // Canal de eventos do jogador
-                        if (msg.channel === '/service/player') {
-                            const data = msg.data;
-                            // ID 1 = Pergunta recebida (questionStart)
-                            if (data.id === 1) {
-                                const content = JSON.parse(data.content);
-                                const questionIndex = content.questionIndex;
-
-                                if (quizData && quizData.questions && quizData.questions[questionIndex]) {
-                                    const choices = quizData.questions[questionIndex].choices;
-                                    const correctIndex = choices.findIndex(c => c.correct);
-
-                                    if (correctIndex !== -1) {
-                                        handleQuestionStart(correctIndex);
-                                    } else {
-                                        console.warn('[Pethz Hub] Resposta correta não encontrada nos dados do quiz.');
-                                    }
-                                } else {
-                                    console.warn('[Pethz Hub] Dados do quiz ainda não carregados ou pergunta inválida.');
-                                }
+                        if (msg.channel === '/service/player' && msg.data && msg.data.id === 1) {
+                            const content = JSON.parse(msg.data.content);
+                            const correctIndex = findCorrectAnswer(content);
+                            if (correctIndex !== null) {
+                                handleNewQuestion(correctIndex, 'WebSocket');
                             }
                         }
                     });
-                } catch (err) {
-                    // Ignora erros de parsing (mensagens que não são JSON)
-                }
+                } catch (e) {}
             });
-
             return ws;
         };
     }
 
     // ============================================================
-    // 6. LÓGICA DE AUTO ANSWER E SHOW ANSWERS
+    // 6. MÉTODO B: OBSERVADOR DE DOM (Rede de segurança / Entrou no meio)
     // ============================================================
-    function handleQuestionStart(correctIndex) {
-        currentCorrectAnswerIndex = correctIndex;
+    // Se o WebSocket falhar (entramos no meio), este observador tenta pegar a resposta
+    // através de dicas visuais ou na leitura da pergunta.
+    
+    const observer = new MutationObserver((mutations) => {
+        // Verifica se os botões de resposta apareceram na tela
+        const answerButtons = document.querySelectorAll('[data-functional-selector^="answer-"]');
+        
+        if (answerButtons.length > 0) {
+            // Se a pergunta mudou (os botões recém apareceram) e ainda não respondemos
+            if (!hasAnsweredCurrentQuestion && currentCorrectAnswerIndex === null) {
+                document.getElementById('pethz-status').innerText = 'Buscando (Modo DOM)...';
+                
+                // Tenta achar a resposta correta lendo o DOM
+                const fallbackIndex = tryFindAnswerInDOM(answerButtons);
+                
+                if (fallbackIndex !== null) {
+                    handleNewQuestion(fallbackIndex, 'DOM (Fallback)');
+                } else {
+                    document.getElementById('pethz-status').innerText = 'Resposta não detectada (Aguardando WS)';
+                }
+            }
+        } else {
+            // Se os botões sumiram, reseta o estado para a próxima pergunta
+            hasAnsweredCurrentQuestion = false;
+            currentCorrectAnswerIndex = null;
+        }
+    });
 
-        // Remove destaques anteriores
-        document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+    observer.observe(document.body, { childList: true, subtree: true });
 
-        // Se Show Answers estiver ativo, destaca a resposta correta
-        if (showAnswersEnabled) {
-            const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
-            const answerElement = document.querySelector(answerSelector);
-            if (answerElement) {
-                answerElement.classList.add('pethz-highlight');
+    // Função que tenta adivinhar a resposta lendo o DOM
+    function tryFindAnswerInDOM(buttons) {
+        // Neste ponto, sem a API e sem WebSocket, é impossível saber a resposta com 100% de certeza 
+        // em quizzes privados. Porém, algumas lives deixam a resposta no código HTML por falha de segurança.
+        // O Kahoot às vezes coloca um atributo "data-correct" nos botões se não for bem configurado.
+        
+        for (let i = 0; i < buttons.length; i++) {
+            // Verifica atributos comuns onde a resposta pode vazar
+            if (buttons[i].getAttribute('data-correct') === 'true' || 
+                buttons[i].classList.contains('correct') || 
+                buttons[i].innerHTML.includes('correct')) {
+                return i;
             }
         }
-
-        // Se Auto Answer estiver ativo, clica na resposta correta
-        if (autoAnswerEnabled) {
-            const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
-            const answerElement = document.querySelector(answerSelector);
-            if (answerElement) {
-                answerElement.click();
-            } else {
-                console.warn('[Pethz Hub] Elemento da resposta correta não encontrado no DOM.');
-            }
-        }
+        return null;
     }
 
     // ============================================================
-    // 7. CONEXÃO DOS TOGGLES AOS EVENTOS
+    // 7. EXECUÇÃO DA AÇÃO
+    // ============================================================
+    function handleNewQuestion(correctIndex, source) {
+        if (hasAnsweredCurrentQuestion && currentCorrectAnswerIndex === correctIndex) return;
+        
+        currentCorrectAnswerIndex = correctIndex;
+        hasAnsweredCurrentQuestion = true;
+        
+        document.getElementById('pethz-status').innerText = `Resposta: Alternativa ${correctIndex + 1} (${source})`;
+
+        // Limpa destaques antigos
+        document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+
+        setTimeout(() => {
+            const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
+            const answerElement = document.querySelector(answerSelector);
+
+            if (answerElement) {
+                if (showAnswersEnabled) {
+                    answerElement.classList.add('pethz-highlight');
+                }
+                if (autoAnswerEnabled) {
+                    answerElement.click();
+                }
+            }
+        }, 150);
+    }
+
+    // ============================================================
+    // 8. CONEXÃO DOS TOGGLES
     // ============================================================
     document.getElementById('pethz-auto-answer').addEventListener('change', (e) => {
         autoAnswerEnabled = e.target.checked;
-        // Se ativado e já houver uma resposta correta conhecida, clica imediatamente
         if (autoAnswerEnabled && currentCorrectAnswerIndex !== null) {
-            const answerSelector = `[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`;
-            const answerElement = document.querySelector(answerSelector);
-            if (answerElement) answerElement.click();
+            const el = document.querySelector(`[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`);
+            if (el) el.click();
         }
     });
 
     document.getElementById('pethz-show-answers').addEventListener('change', (e) => {
         showAnswersEnabled = e.target.checked;
-
+        document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+        
         if (showAnswersEnabled && currentCorrectAnswerIndex !== null) {
-            const answerSelector = `[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`;
-            const answerElement = document.querySelector(answerSelector);
-            if (answerElement) answerElement.classList.add('pethz-highlight');
-        } else if (!showAnswersEnabled) {
-            // Remove todos os destaques
-            document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+            const el = document.querySelector(`[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`);
+            if (el) el.classList.add('pethz-highlight');
         }
     });
 
-    console.log('[Pethz Hub] Script carregado. Arraste pelo cabeçalho, minimize ou feche conforme necessário.');
+    console.log('%c[Pethz Hub v3.5] Carregado! Suporte a entrada no meio da partida ativado.', 'color: #00ff88; font-weight: bold; font-size: 14px;');
 })();
