@@ -1,220 +1,252 @@
 (function () {
   'use strict';
 
-  /* ========== CONFIGURAÇÃO ========== */
   const CONTAINER_ID = 'kq-id-menu-container';
   const STYLE_ID     = 'kq-id-menu-style';
-
-  /* ========== LIMPEZA DE INSTÂNCIA ANTERIOR ========== */
   document.getElementById(CONTAINER_ID)?.remove();
   document.getElementById(STYLE_ID)?.remove();
 
-  /* ========== EXTRAÇÃO DO ID ========== */
-  function extractQuizId() {
-    const url = window.location.href;
+  const UUID_RE     = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const UUID_GLOBAL = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
-    // 1) UUID (padrão mais comum no Kahoot!)
-    const uuid = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-    if (uuid) return uuid[0];
+  const found    = new Map();   // id -> source
+  const originals = {};
+  let intervalId = null, observer = null, msgDescBackup = null;
 
-    // 2) Padrões específicos da URL
-    const patterns = [
-      /\/challenge\/([a-zA-Z0-9_-]+)/,
-      /\/details\/([a-zA-Z0-9_-]+)/,
-      /\/share\/[^\/]+\/([a-zA-Z0-9_-]+)/,
-      /[?&]quizId=([a-zA-Z0-9_-]+)/,
-      /[?&]id=([a-zA-Z0-9_-]+)/
-    ];
-    for (const p of patterns) {
-      const m = url.match(p);
-      if (m) return m[1];
-    }
-    return null;
+  function addFinding(id, source) {
+    if (!id || !UUID_RE.test(id) || found.has(id)) return;
+    found.set(id, source);
+    render();
   }
 
-  const quizId = extractQuizId();
+  /* ---------- varredura de strings / objetos ---------- */
+  function scanString(str, source) {
+    if (typeof str !== 'string' || !str) return;
+    if (str.includes('kahootId') || str.includes('quizId') || str.includes('"uuid"')) {
+      try { scanObject(JSON.parse(str), source); } catch (_) {}
+    }
+    UUID_GLOBAL.lastIndex = 0;
+    let m;
+    while ((m = UUID_GLOBAL.exec(str)) !== null) addFinding(m[0], source);
+  }
 
-  /* ========== CRIAÇÃO DO CONTAINER ========== */
+  function scanObject(obj, source, depth = 0, seen = new WeakSet()) {
+    if (depth > 6 || obj == null) return;
+    if (typeof obj === 'string') return scanString(obj, source);
+    if (typeof obj !== 'object' || seen.has(obj)) return;
+    seen.add(obj);
+    for (const k of ['kahootId', 'quizId', 'kahoot_id', 'quiz_id', 'uuid']) {
+      try {
+        const v = obj[k];
+        if (typeof v === 'string' && UUID_RE.test(v)) addFinding(v, `${source} → ${k}`);
+      } catch (_) {}
+    }
+    try { for (const k of Object.keys(obj)) scanObject(obj[k], source, depth + 1, seen); } catch (_) {}
+  }
+
+  /* ---------- hook: WebSocket (novas conexões) ---------- */
+  try {
+    originals.WebSocket = window.WebSocket;
+    const Orig = originals.WebSocket;
+    function HookedWS(...a) {
+      const ws = new Orig(...a);
+      ws.addEventListener('message', ev => { try { scanString(ev.data, 'WebSocket'); } catch (_) {} });
+      return ws;
+    }
+    HookedWS.prototype = Orig.prototype;
+    Object.assign(HookedWS, { CONNECTING: Orig.CONNECTING, OPEN: Orig.OPEN, CLOSING: Orig.CLOSING, CLOSED: Orig.CLOSED });
+    window.WebSocket = HookedWS;
+  } catch (_) {}
+
+  /* ---------- hook: MessageEvent.data (pega socket JÁ aberto) ---------- */
+  try {
+    msgDescBackup = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
+    if (msgDescBackup && msgDescBackup.get) {
+      Object.defineProperty(MessageEvent.prototype, 'data', {
+        configurable: true,
+        get() {
+          const v = msgDescBackup.get.call(this);
+          try { scanString(v, 'WebSocket (socket ativo)'); } catch (_) {}
+          return v;
+        }
+      });
+    }
+  } catch (_) {}
+
+  /* ---------- hook: fetch ---------- */
+  try {
+    originals.fetch = window.fetch;
+    window.fetch = function (...a) {
+      const url = typeof a[0] === 'string' ? a[0] : a[0]?.url;
+      if (url) scanString(url, 'fetch (URL)');
+      return originals.fetch.apply(this, a).then(r => {
+        try { r.clone().text().then(t => scanString(t, 'fetch (corpo)')).catch(() => {}); } catch (_) {}
+        return r;
+      });
+    };
+  } catch (_) {}
+
+  /* ---------- hook: XHR ---------- */
+  try {
+    originals.XHR  = window.XMLHttpRequest;
+    originals.open = originals.XHR.prototype.open;
+    originals.send = originals.XHR.prototype.send;
+    originals.XHR.prototype.open = function (m, u, ...r) { this.__kqUrl = u; return originals.open.call(this, m, u, ...r); };
+    originals.XHR.prototype.send = function (...a) {
+      this.addEventListener('load', () => {
+        try { scanString(this.__kqUrl, 'XHR (URL)'); scanString(this.responseText, 'XHR (corpo)'); } catch (_) {}
+      });
+      return originals.send.apply(this, a);
+    };
+  } catch (_) {}
+
+  /* ---------- varreduras passivas (histórico já ocorrido) ---------- */
+  function passiveScan() {
+    try { for (const e of performance.getEntriesByType('resource')) scanString(e.name, 'performance (histórico)'); } catch (_) {}
+    try { for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i); scanString(sessionStorage.getItem(k), `sessionStorage[${k}]`);
+    } } catch (_) {}
+    try { for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (/kahoot|quiz|game/i.test(k)) scanString(localStorage.getItem(k), `localStorage[${k}]`);
+    } } catch (_) {}
+    for (const g of ['__NEXT_DATA__', '__INITIAL_STATE__', 'kahootState', 'gameState']) {
+      try { if (window[g]) scanObject(window[g], `window.${g}`); } catch (_) {}
+    }
+  }
+
+  passiveScan();
+  intervalId = setInterval(passiveScan, 2500);
+  try {
+    observer = new MutationObserver(() => {
+      document.querySelectorAll('[data-kahoot-id],[data-quiz-id],[data-id]').forEach(el => {
+        for (const a of ['data-kahoot-id', 'data-quiz-id', 'data-id'])
+          if (el.hasAttribute(a)) scanString(el.getAttribute(a), `DOM [${a}]`);
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  } catch (_) {}
+
+  /* ---------- UI ---------- */
   const container = document.createElement('div');
   container.id = CONTAINER_ID;
-
   container.innerHTML = `
-    <div class="kq-menu" role="dialog" aria-label="Informações do Quiz Kahoot">
+    <div class="kq-menu">
       <div class="kq-header">
         <span class="kq-dot"></span>
-        <span class="kq-title">Kahoot ID</span>
-        <button class="kq-close" title="Fechar" aria-label="Fechar">✕</button>
+        <span class="kq-title">Kahoot ID (jogador)</span>
+        <button class="kq-close" title="Fechar">✕</button>
       </div>
-      <div class="kq-body">
-        <div class="kq-label">ID do Quiz</div>
-        <div class="kq-id ${quizId ? '' : 'kq-id-empty'}" title="${quizId || 'ID não encontrado na URL'}">
-          ${quizId || 'ID não encontrado'}
-        </div>
-        <button class="kq-copy" ${quizId ? '' : 'disabled'}>
-          <span class="kq-copy-text">Copiar ID</span>
-        </button>
-      </div>
-    </div>
-  `;
+      <div class="kq-body" id="kq-body"></div>
+    </div>`;
+  document.body.appendChild(container);
 
-  /* ========== ESTILOS ========== */
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    #${CONTAINER_ID} {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 2147483647;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
-    }
-    #${CONTAINER_ID} .kq-menu {
-      width: 270px;
-      background: #181825;
-      color: #e6e6f0;
-      border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55),
-                  0 0 0 1px rgba(255, 255, 255, 0.06);
-      overflow: hidden;
-      animation: kqSlideIn 0.25s ease-out;
-    }
-    @keyframes kqSlideIn {
-      from { opacity: 0; transform: translateY(-10px) scale(0.97); }
-      to   { opacity: 1; transform: translateY(0)     scale(1); }
-    }
-    #${CONTAINER_ID} .kq-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 14px;
-      background: #1f1f30;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    }
-    #${CONTAINER_ID} .kq-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #7c5cff;
-      box-shadow: 0 0 10px #7c5cff;
-    }
-    #${CONTAINER_ID} .kq-title {
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
-      color: #c9c9dd;
-      text-transform: uppercase;
-      flex: 1;
-    }
-    #${CONTAINER_ID} .kq-close {
-      background: transparent;
-      border: none;
-      color: #8b8ba7;
-      font-size: 14px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 6px;
-      transition: all 0.15s ease;
-      line-height: 1;
-    }
-    #${CONTAINER_ID} .kq-close:hover {
-      background: rgba(255, 80, 80, 0.15);
-      color: #ff5c5c;
-    }
-    #${CONTAINER_ID} .kq-body {
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    #${CONTAINER_ID} .kq-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: #7a7a95;
-    }
-    #${CONTAINER_ID} .kq-id {
-      background: #101019;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 8px;
-      padding: 10px;
-      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
-      font-size: 12px;
-      color: #8ff0c3;
-      word-break: break-all;
-      text-align: center;
-      user-select: all;
-      line-height: 1.4;
-    }
-    #${CONTAINER_ID} .kq-id-empty { color: #ff8080; }
-    #${CONTAINER_ID} .kq-copy {
-      background: linear-gradient(135deg, #7c5cff 0%, #5b3dd6 100%);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.18s ease;
-      font-family: inherit;
-    }
-    #${CONTAINER_ID} .kq-copy:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(124, 92, 255, 0.4);
-    }
-    #${CONTAINER_ID} .kq-copy:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    #${CONTAINER_ID} .kq-copy:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    #${CONTAINER_ID} .kq-copy.kq-success {
-      background: linear-gradient(135deg, #23c483 0%, #12a06a 100%);
-    }
+    #${CONTAINER_ID} { position: fixed; top: 20px; right: 20px; z-index: 2147483647;
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #${CONTAINER_ID} * { box-sizing: border-box; }
+    #${CONTAINER_ID} .kq-menu { width: 320px; background: #181825; color: #e6e6f0;
+      border-radius: 14px; overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06); }
+    #${CONTAINER_ID} .kq-header { display: flex; align-items: center; gap: 8px;
+      padding: 12px 14px; background: #1f1f30;
+      border-bottom: 1px solid rgba(255,255,255,.06); }
+    #${CONTAINER_ID} .kq-dot { width: 8px; height: 8px; border-radius: 50%;
+      background: #7c5cff; box-shadow: 0 0 10px #7c5cff; }
+    #${CONTAINER_ID} .kq-title { flex: 1; font-size: 12.5px; font-weight: 600;
+      letter-spacing: .4px; color: #c9c9dd; text-transform: uppercase; }
+    #${CONTAINER_ID} .kq-close { background: transparent; border: none; color: #8b8ba7;
+      font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+    #${CONTAINER_ID} .kq-close:hover { background: rgba(255,80,80,.15); color: #ff5c5c; }
+    #${CONTAINER_ID} .kq-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+    #${CONTAINER_ID} .kq-label { font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .6px; color: #7a7a95; }
+    #${CONTAINER_ID} .kq-id { background: #101019; border: 1px solid rgba(255,255,255,.07);
+      border-radius: 8px; padding: 10px; color: #8ff0c3; text-align: center;
+      font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px;
+      word-break: break-all; user-select: all; }
+    #${CONTAINER_ID} .kq-meta { font-size: 10.5px; color: #6b6b85; text-align: center;
+      font-family: monospace; word-break: break-all; }
+    #${CONTAINER_ID} .kq-copy { background: linear-gradient(135deg,#7c5cff,#5b3dd6);
+      color: #fff; border: none; border-radius: 8px; padding: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    #${CONTAINER_ID} .kq-copy:hover { transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(124,92,255,.4); }
+    #${CONTAINER_ID} .kq-copy.kq-success { background: linear-gradient(135deg,#23c483,#12a06a); }
+    #${CONTAINER_ID} .kq-status { display: flex; flex-direction: column;
+      align-items: center; gap: 8px; padding: 4px 0 2px; }
+    #${CONTAINER_ID} .kq-spinner { width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid rgba(124,92,255,.25); border-top-color: #7c5cff;
+      animation: kqSpin .8s linear infinite; }
+    @keyframes kqSpin { to { transform: rotate(360deg); } }
+    #${CONTAINER_ID} .kq-hint { font-size: 11.5px; color: #8b8ba7;
+      text-align: center; line-height: 1.5; }
+    #${CONTAINER_ID} .kq-hint b { color: #c9c9dd; }
+    #${CONTAINER_ID} .kq-tip { font-size: 11px; color: #ffb86b; background: rgba(255,184,107,.08);
+      border: 1px solid rgba(255,184,107,.25); border-radius: 8px;
+      padding: 8px 10px; line-height: 1.5; margin-top: 4px; }
   `;
-
   document.head.appendChild(style);
-  document.body.appendChild(container);
 
-  /* ========== FUNÇÕES DE AÇÃO ========== */
-  const closeBtn = container.querySelector('.kq-close');
-  const copyBtn  = container.querySelector('.kq-copy');
-  const copyText = container.querySelector('.kq-copy-text');
+  function render() {
+    const body = container.querySelector('#kq-body');
+    if (!body) return;
+    if (found.size === 0) {
+      body.innerHTML = `
+        <div class="kq-status">
+          <div class="kq-spinner"></div>
+          <div class="kq-hint"><b>Procurando ID...</b><br>Interceptando WebSocket / API do jogo.</div>
+          <div class="kq-tip">
+            Dica: se demorar, responda uma pergunta ou aguarde a próxima rodada —
+            os pacotes do servidor contêm o <code>kahootId</code>.
+          </div>
+        </div>`;
+      return;
+    }
+    const [id, source] = [...found.entries()][0];
+    body.innerHTML = `
+      <div class="kq-label">ID do Quiz</div>
+      <div class="kq-id">${id}</div>
+      <div class="kq-meta">fonte: ${source}</div>
+      <button class="kq-copy" data-id="${id}"><span class="kq-copy-text">Copiar ID</span></button>`;
+    body.querySelector('.kq-copy').addEventListener('click', async function () {
+      let ok = false;
+      try { await navigator.clipboard.writeText(id); ok = true; }
+      catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = id; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { ok = document.execCommand('copy'); } catch (_) {}
+        ta.remove();
+      }
+      if (ok) {
+        const t = this.querySelector('.kq-copy-text');
+        t.textContent = '✓ Copiado!';
+        this.classList.add('kq-success');
+        setTimeout(() => { t.textContent = 'Copiar ID'; this.classList.remove('kq-success'); }, 1500);
+      }
+    });
+  }
+  render();
 
-  // Fechar → remove tudo
-  closeBtn.addEventListener('click', () => {
+  /* ---------- close / cleanup total ---------- */
+  container.querySelector('.kq-close').addEventListener('click', () => {
+    try { clearInterval(intervalId); } catch (_) {}
+    try { observer?.disconnect(); } catch (_) {}
+    try { if (originals.WebSocket) window.WebSocket = originals.WebSocket; } catch (_) {}
+    try { if (originals.fetch) window.fetch = originals.fetch; } catch (_) {}
+    try {
+      if (originals.XHR) {
+        originals.XHR.prototype.open = originals.open;
+        originals.XHR.prototype.send = originals.send;
+      }
+    } catch (_) {}
+    try {
+      if (msgDescBackup) Object.defineProperty(MessageEvent.prototype, 'data', msgDescBackup);
+    } catch (_) {}
     container.remove();
     style.remove();
-  });
-
-  // Copiar
-  copyBtn.addEventListener('click', async () => {
-    if (!quizId) return;
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(quizId);
-      ok = true;
-    } catch (_) {
-      // Fallback antigo
-      const ta = document.createElement('textarea');
-      ta.value = quizId;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { ok = document.execCommand('copy'); } catch (_) {}
-      ta.remove();
-    }
-
-    if (ok) {
-      copyText.textContent = '✓ Copiado!';
-      copyBtn.classList.add('kq-success');
-      setTimeout(() => {
-        copyText.textContent = 'Copiar ID';
-        copyBtn.classList.remove('kq-success');
-      }, 1500);
-    }
   });
 })();
