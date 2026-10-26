@@ -1,252 +1,302 @@
-(function () {
-  'use strict';
+/*
+ * Pethz Hub - Menu flutuante para Kahoot
+ * Funcionalidades: Auto Answer e Show Answers
+ * Design: Neon escuro, arrastável, minimizável
+ * Uso: Cole este código no console do navegador (F12 > Console) antes de entrar na partida.
+ */
 
-  const CONTAINER_ID = 'kq-id-menu-container';
-  const STYLE_ID     = 'kq-id-menu-style';
-  document.getElementById(CONTAINER_ID)?.remove();
-  document.getElementById(STYLE_ID)?.remove();
+(function() {
+    'use strict';
 
-  const UUID_RE     = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-  const UUID_GLOBAL = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-
-  const found    = new Map();   // id -> source
-  const originals = {};
-  let intervalId = null, observer = null, msgDescBackup = null;
-
-  function addFinding(id, source) {
-    if (!id || !UUID_RE.test(id) || found.has(id)) return;
-    found.set(id, source);
-    render();
-  }
-
-  /* ---------- varredura de strings / objetos ---------- */
-  function scanString(str, source) {
-    if (typeof str !== 'string' || !str) return;
-    if (str.includes('kahootId') || str.includes('quizId') || str.includes('"uuid"')) {
-      try { scanObject(JSON.parse(str), source); } catch (_) {}
-    }
-    UUID_GLOBAL.lastIndex = 0;
-    let m;
-    while ((m = UUID_GLOBAL.exec(str)) !== null) addFinding(m[0], source);
-  }
-
-  function scanObject(obj, source, depth = 0, seen = new WeakSet()) {
-    if (depth > 6 || obj == null) return;
-    if (typeof obj === 'string') return scanString(obj, source);
-    if (typeof obj !== 'object' || seen.has(obj)) return;
-    seen.add(obj);
-    for (const k of ['kahootId', 'quizId', 'kahoot_id', 'quiz_id', 'uuid']) {
-      try {
-        const v = obj[k];
-        if (typeof v === 'string' && UUID_RE.test(v)) addFinding(v, `${source} → ${k}`);
-      } catch (_) {}
-    }
-    try { for (const k of Object.keys(obj)) scanObject(obj[k], source, depth + 1, seen); } catch (_) {}
-  }
-
-  /* ---------- hook: WebSocket (novas conexões) ---------- */
-  try {
-    originals.WebSocket = window.WebSocket;
-    const Orig = originals.WebSocket;
-    function HookedWS(...a) {
-      const ws = new Orig(...a);
-      ws.addEventListener('message', ev => { try { scanString(ev.data, 'WebSocket'); } catch (_) {} });
-      return ws;
-    }
-    HookedWS.prototype = Orig.prototype;
-    Object.assign(HookedWS, { CONNECTING: Orig.CONNECTING, OPEN: Orig.OPEN, CLOSING: Orig.CLOSING, CLOSED: Orig.CLOSED });
-    window.WebSocket = HookedWS;
-  } catch (_) {}
-
-  /* ---------- hook: MessageEvent.data (pega socket JÁ aberto) ---------- */
-  try {
-    msgDescBackup = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
-    if (msgDescBackup && msgDescBackup.get) {
-      Object.defineProperty(MessageEvent.prototype, 'data', {
-        configurable: true,
-        get() {
-          const v = msgDescBackup.get.call(this);
-          try { scanString(v, 'WebSocket (socket ativo)'); } catch (_) {}
-          return v;
+    // ============================================================
+    // 1. INJEÇÃO DE CSS (TEMA NEON ESCURO)
+    // ============================================================
+    const style = document.createElement('style');
+    style.textContent = `
+        #pethz-hub {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 300px;
+            background: rgba(15, 15, 25, 0.95);
+            border: 2px solid #8a2be2;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #e0e0ff;
+            z-index: 99999;
+            user-select: none;
+            transition: all 0.3s ease;
         }
-      });
-    }
-  } catch (_) {}
+        #pethz-hub.minimized .pethz-body { display: none; }
+        .pethz-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: linear-gradient(90deg, #1a1a2e, #16213e);
+            border-bottom: 1px solid #8a2be2;
+            border-radius: 10px 10px 0 0;
+            cursor: move;
+        }
+        .pethz-title {
+            font-weight: bold;
+            font-size: 18px;
+            text-shadow: 0 0 8px #8a2be2;
+        }
+        .pethz-controls button {
+            background: transparent;
+            border: none;
+            color: #e0e0ff;
+            font-size: 18px;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: color 0.2s;
+        }
+        .pethz-controls button:hover { color: #8a2be2; }
+        .pethz-body { padding: 15px; }
+        .pethz-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .pethz-toggle label { font-size: 14px; }
+        .pethz-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .pethz-switch input { opacity: 0; width: 0; height: 0; }
+        .pethz-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .pethz-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px; width: 18px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .pethz-switch input:checked + .pethz-slider { background-color: #8a2be2; }
+        .pethz-switch input:checked + .pethz-slider:before { transform: translateX(26px); }
+        .pethz-highlight {
+            box-shadow: 0 0 20px 5px #8a2be2 !important;
+            border: 2px solid #8a2be2 !important;
+            transition: box-shadow 0.3s ease-in-out;
+        }
+    `;
+    document.head.appendChild(style);
 
-  /* ---------- hook: fetch ---------- */
-  try {
-    originals.fetch = window.fetch;
-    window.fetch = function (...a) {
-      const url = typeof a[0] === 'string' ? a[0] : a[0]?.url;
-      if (url) scanString(url, 'fetch (URL)');
-      return originals.fetch.apply(this, a).then(r => {
-        try { r.clone().text().then(t => scanString(t, 'fetch (corpo)')).catch(() => {}); } catch (_) {}
-        return r;
-      });
-    };
-  } catch (_) {}
+    // ============================================================
+    // 2. CRIAÇÃO DO MENU FLUTUANTE
+    // ============================================================
+    const menu = document.createElement('div');
+    menu.id = 'pethz-hub';
+    menu.innerHTML = `
+        <div class="pethz-header" id="pethz-drag-handle">
+            <span class="pethz-title">Pethz Hub</span>
+            <div class="pethz-controls">
+                <button id="pethz-minimize">—</button>
+                <button id="pethz-close">✕</button>
+            </div>
+        </div>
+        <div class="pethz-body">
+            <div class="pethz-toggle">
+                <label for="pethz-auto-answer">Auto Answer</label>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-auto-answer">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
+            <div class="pethz-toggle">
+                <label for="pethz-show-answers">Show Answers</label>
+                <label class="pethz-switch">
+                    <input type="checkbox" id="pethz-show-answers">
+                    <span class="pethz-slider"></span>
+                </label>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(menu);
 
-  /* ---------- hook: XHR ---------- */
-  try {
-    originals.XHR  = window.XMLHttpRequest;
-    originals.open = originals.XHR.prototype.open;
-    originals.send = originals.XHR.prototype.send;
-    originals.XHR.prototype.open = function (m, u, ...r) { this.__kqUrl = u; return originals.open.call(this, m, u, ...r); };
-    originals.XHR.prototype.send = function (...a) {
-      this.addEventListener('load', () => {
-        try { scanString(this.__kqUrl, 'XHR (URL)'); scanString(this.responseText, 'XHR (corpo)'); } catch (_) {}
-      });
-      return originals.send.apply(this, a);
-    };
-  } catch (_) {}
+    // ============================================================
+    // 3. FUNCIONALIDADES DO MENU: ARRASTAR, MINIMIZAR, FECHAR
+    // ============================================================
+    const dragHandle = document.getElementById('pethz-drag-handle');
+    let isDragging = false, offsetX, offsetY;
 
-  /* ---------- varreduras passivas (histórico já ocorrido) ---------- */
-  function passiveScan() {
-    try { for (const e of performance.getEntriesByType('resource')) scanString(e.name, 'performance (histórico)'); } catch (_) {}
-    try { for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i); scanString(sessionStorage.getItem(k), `sessionStorage[${k}]`);
-    } } catch (_) {}
-    try { for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (/kahoot|quiz|game/i.test(k)) scanString(localStorage.getItem(k), `localStorage[${k}]`);
-    } } catch (_) {}
-    for (const g of ['__NEXT_DATA__', '__INITIAL_STATE__', 'kahootState', 'gameState']) {
-      try { if (window[g]) scanObject(window[g], `window.${g}`); } catch (_) {}
-    }
-  }
-
-  passiveScan();
-  intervalId = setInterval(passiveScan, 2500);
-  try {
-    observer = new MutationObserver(() => {
-      document.querySelectorAll('[data-kahoot-id],[data-quiz-id],[data-id]').forEach(el => {
-        for (const a of ['data-kahoot-id', 'data-quiz-id', 'data-id'])
-          if (el.hasAttribute(a)) scanString(el.getAttribute(a), `DOM [${a}]`);
-      });
+    dragHandle.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        offsetX = e.clientX - menu.getBoundingClientRect().left;
+        offsetY = e.clientY - menu.getBoundingClientRect().top;
     });
-    observer.observe(document.body, { childList: true, subtree: true });
-  } catch (_) {}
 
-  /* ---------- UI ---------- */
-  const container = document.createElement('div');
-  container.id = CONTAINER_ID;
-  container.innerHTML = `
-    <div class="kq-menu">
-      <div class="kq-header">
-        <span class="kq-dot"></span>
-        <span class="kq-title">Kahoot ID (jogador)</span>
-        <button class="kq-close" title="Fechar">✕</button>
-      </div>
-      <div class="kq-body" id="kq-body"></div>
-    </div>`;
-  document.body.appendChild(container);
-
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-    #${CONTAINER_ID} { position: fixed; top: 20px; right: 20px; z-index: 2147483647;
-      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    #${CONTAINER_ID} * { box-sizing: border-box; }
-    #${CONTAINER_ID} .kq-menu { width: 320px; background: #181825; color: #e6e6f0;
-      border-radius: 14px; overflow: hidden;
-      box-shadow: 0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06); }
-    #${CONTAINER_ID} .kq-header { display: flex; align-items: center; gap: 8px;
-      padding: 12px 14px; background: #1f1f30;
-      border-bottom: 1px solid rgba(255,255,255,.06); }
-    #${CONTAINER_ID} .kq-dot { width: 8px; height: 8px; border-radius: 50%;
-      background: #7c5cff; box-shadow: 0 0 10px #7c5cff; }
-    #${CONTAINER_ID} .kq-title { flex: 1; font-size: 12.5px; font-weight: 600;
-      letter-spacing: .4px; color: #c9c9dd; text-transform: uppercase; }
-    #${CONTAINER_ID} .kq-close { background: transparent; border: none; color: #8b8ba7;
-      font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
-    #${CONTAINER_ID} .kq-close:hover { background: rgba(255,80,80,.15); color: #ff5c5c; }
-    #${CONTAINER_ID} .kq-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-    #${CONTAINER_ID} .kq-label { font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .6px; color: #7a7a95; }
-    #${CONTAINER_ID} .kq-id { background: #101019; border: 1px solid rgba(255,255,255,.07);
-      border-radius: 8px; padding: 10px; color: #8ff0c3; text-align: center;
-      font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px;
-      word-break: break-all; user-select: all; }
-    #${CONTAINER_ID} .kq-meta { font-size: 10.5px; color: #6b6b85; text-align: center;
-      font-family: monospace; word-break: break-all; }
-    #${CONTAINER_ID} .kq-copy { background: linear-gradient(135deg,#7c5cff,#5b3dd6);
-      color: #fff; border: none; border-radius: 8px; padding: 10px;
-      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    #${CONTAINER_ID} .kq-copy:hover { transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(124,92,255,.4); }
-    #${CONTAINER_ID} .kq-copy.kq-success { background: linear-gradient(135deg,#23c483,#12a06a); }
-    #${CONTAINER_ID} .kq-status { display: flex; flex-direction: column;
-      align-items: center; gap: 8px; padding: 4px 0 2px; }
-    #${CONTAINER_ID} .kq-spinner { width: 22px; height: 22px; border-radius: 50%;
-      border: 2px solid rgba(124,92,255,.25); border-top-color: #7c5cff;
-      animation: kqSpin .8s linear infinite; }
-    @keyframes kqSpin { to { transform: rotate(360deg); } }
-    #${CONTAINER_ID} .kq-hint { font-size: 11.5px; color: #8b8ba7;
-      text-align: center; line-height: 1.5; }
-    #${CONTAINER_ID} .kq-hint b { color: #c9c9dd; }
-    #${CONTAINER_ID} .kq-tip { font-size: 11px; color: #ffb86b; background: rgba(255,184,107,.08);
-      border: 1px solid rgba(255,184,107,.25); border-radius: 8px;
-      padding: 8px 10px; line-height: 1.5; margin-top: 4px; }
-  `;
-  document.head.appendChild(style);
-
-  function render() {
-    const body = container.querySelector('#kq-body');
-    if (!body) return;
-    if (found.size === 0) {
-      body.innerHTML = `
-        <div class="kq-status">
-          <div class="kq-spinner"></div>
-          <div class="kq-hint"><b>Procurando ID...</b><br>Interceptando WebSocket / API do jogo.</div>
-          <div class="kq-tip">
-            Dica: se demorar, responda uma pergunta ou aguarde a próxima rodada —
-            os pacotes do servidor contêm o <code>kahootId</code>.
-          </div>
-        </div>`;
-      return;
-    }
-    const [id, source] = [...found.entries()][0];
-    body.innerHTML = `
-      <div class="kq-label">ID do Quiz</div>
-      <div class="kq-id">${id}</div>
-      <div class="kq-meta">fonte: ${source}</div>
-      <button class="kq-copy" data-id="${id}"><span class="kq-copy-text">Copiar ID</span></button>`;
-    body.querySelector('.kq-copy').addEventListener('click', async function () {
-      let ok = false;
-      try { await navigator.clipboard.writeText(id); ok = true; }
-      catch (_) {
-        const ta = document.createElement('textarea');
-        ta.value = id; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select();
-        try { ok = document.execCommand('copy'); } catch (_) {}
-        ta.remove();
-      }
-      if (ok) {
-        const t = this.querySelector('.kq-copy-text');
-        t.textContent = '✓ Copiado!';
-        this.classList.add('kq-success');
-        setTimeout(() => { t.textContent = 'Copiar ID'; this.classList.remove('kq-success'); }, 1500);
-      }
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        menu.style.left = (e.clientX - offsetX) + 'px';
+        menu.style.top = (e.clientY - offsetY) + 'px';
     });
-  }
-  render();
 
-  /* ---------- close / cleanup total ---------- */
-  container.querySelector('.kq-close').addEventListener('click', () => {
-    try { clearInterval(intervalId); } catch (_) {}
-    try { observer?.disconnect(); } catch (_) {}
-    try { if (originals.WebSocket) window.WebSocket = originals.WebSocket; } catch (_) {}
-    try { if (originals.fetch) window.fetch = originals.fetch; } catch (_) {}
-    try {
-      if (originals.XHR) {
-        originals.XHR.prototype.open = originals.open;
-        originals.XHR.prototype.send = originals.send;
-      }
-    } catch (_) {}
-    try {
-      if (msgDescBackup) Object.defineProperty(MessageEvent.prototype, 'data', msgDescBackup);
-    } catch (_) {}
-    container.remove();
-    style.remove();
-  });
+    document.addEventListener('mouseup', () => { isDragging = false; });
+
+    document.getElementById('pethz-minimize').addEventListener('click', () => {
+        menu.classList.toggle('minimized');
+    });
+
+    document.getElementById('pethz-close').addEventListener('click', () => {
+        menu.remove();
+        // Restaura o WebSocket original (opcional)
+        if (window.WebSocket !== OriginalWebSocket) {
+            window.WebSocket = OriginalWebSocket;
+        }
+    });
+
+    // ============================================================
+    // 4. VARIÁVEIS DE ESTADO E DADOS DO QUIZ
+    // ============================================================
+    let autoAnswerEnabled = false;
+    let showAnswersEnabled = false;
+    let currentCorrectAnswerIndex = null;
+    let quizData = null; // Armazenará os dados do quiz (perguntas e respostas)
+
+    // Tenta extrair o ID do quiz da URL (ex: ?quizId=xxxx)
+    const urlParams = new URLSearchParams(window.location.search);
+    const quizId = urlParams.get('quizId');
+
+    // Busca os dados do quiz na API pública do Kahoot (usado para saber a resposta correta)
+    async function fetchQuizData(id) {
+        if (!id) return;
+        try {
+            const response = await fetch(`https://create.kahoot.it/rest/kahoots/${id}/card/?includeKahoot=true`);
+            if (!response.ok) throw new Error('Falha na resposta da API');
+            const data = await response.json();
+            // A estrutura pode variar; geralmente os dados estão em data.kahoot ou data.quiz
+            quizData = data.kahoot || data.quiz || data;
+            console.log('[Pethz Hub] Dados do quiz carregados com sucesso.');
+        } catch (err) {
+            console.warn('[Pethz Hub] Não foi possível obter os dados do quiz:', err.message);
+        }
+    }
+
+    if (quizId) {
+        fetchQuizData(quizId);
+    } else {
+        console.warn('[Pethz Hub] ID do quiz não encontrado na URL. O Auto Answer pode não funcionar.');
+    }
+
+    // ============================================================
+    // 5. INTERCEPTAÇÃO DO WEBSOCKET (OBTENÇÃO DA RESPOSTA CORRETA)
+    // ============================================================
+    const OriginalWebSocket = window.WebSocket;
+    if (!window.__pethzWSHooked) {
+        window.__pethzWSHooked = true;
+
+        window.WebSocket = function(...args) {
+            const ws = new OriginalWebSocket(...args);
+
+            ws.addEventListener('message', (event) => {
+                try {
+                    const rawData = JSON.parse(event.data);
+                    // As mensagens do Kahoot geralmente vêm como um array
+                    const messages = Array.isArray(rawData) ? rawData : [rawData];
+
+                    messages.forEach(msg => {
+                        // Canal de eventos do jogador
+                        if (msg.channel === '/service/player') {
+                            const data = msg.data;
+                            // ID 1 = Pergunta recebida (questionStart)
+                            if (data.id === 1) {
+                                const content = JSON.parse(data.content);
+                                const questionIndex = content.questionIndex;
+
+                                if (quizData && quizData.questions && quizData.questions[questionIndex]) {
+                                    const choices = quizData.questions[questionIndex].choices;
+                                    const correctIndex = choices.findIndex(c => c.correct);
+
+                                    if (correctIndex !== -1) {
+                                        handleQuestionStart(correctIndex);
+                                    } else {
+                                        console.warn('[Pethz Hub] Resposta correta não encontrada nos dados do quiz.');
+                                    }
+                                } else {
+                                    console.warn('[Pethz Hub] Dados do quiz ainda não carregados ou pergunta inválida.');
+                                }
+                            }
+                        }
+                    });
+                } catch (err) {
+                    // Ignora erros de parsing (mensagens que não são JSON)
+                }
+            });
+
+            return ws;
+        };
+    }
+
+    // ============================================================
+    // 6. LÓGICA DE AUTO ANSWER E SHOW ANSWERS
+    // ============================================================
+    function handleQuestionStart(correctIndex) {
+        currentCorrectAnswerIndex = correctIndex;
+
+        // Remove destaques anteriores
+        document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+
+        // Se Show Answers estiver ativo, destaca a resposta correta
+        if (showAnswersEnabled) {
+            const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
+            const answerElement = document.querySelector(answerSelector);
+            if (answerElement) {
+                answerElement.classList.add('pethz-highlight');
+            }
+        }
+
+        // Se Auto Answer estiver ativo, clica na resposta correta
+        if (autoAnswerEnabled) {
+            const answerSelector = `[data-functional-selector="answer-${correctIndex}"]`;
+            const answerElement = document.querySelector(answerSelector);
+            if (answerElement) {
+                answerElement.click();
+            } else {
+                console.warn('[Pethz Hub] Elemento da resposta correta não encontrado no DOM.');
+            }
+        }
+    }
+
+    // ============================================================
+    // 7. CONEXÃO DOS TOGGLES AOS EVENTOS
+    // ============================================================
+    document.getElementById('pethz-auto-answer').addEventListener('change', (e) => {
+        autoAnswerEnabled = e.target.checked;
+        // Se ativado e já houver uma resposta correta conhecida, clica imediatamente
+        if (autoAnswerEnabled && currentCorrectAnswerIndex !== null) {
+            const answerSelector = `[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`;
+            const answerElement = document.querySelector(answerSelector);
+            if (answerElement) answerElement.click();
+        }
+    });
+
+    document.getElementById('pethz-show-answers').addEventListener('change', (e) => {
+        showAnswersEnabled = e.target.checked;
+
+        if (showAnswersEnabled && currentCorrectAnswerIndex !== null) {
+            const answerSelector = `[data-functional-selector="answer-${currentCorrectAnswerIndex}"]`;
+            const answerElement = document.querySelector(answerSelector);
+            if (answerElement) answerElement.classList.add('pethz-highlight');
+        } else if (!showAnswersEnabled) {
+            // Remove todos os destaques
+            document.querySelectorAll('.pethz-highlight').forEach(el => el.classList.remove('pethz-highlight'));
+        }
+    });
+
+    console.log('[Pethz Hub] Script carregado. Arraste pelo cabeçalho, minimize ou feche conforme necessário.');
 })();
